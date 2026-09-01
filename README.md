@@ -1,61 +1,58 @@
-# GitHub Contribution Graph
+# GitHub Sprout
 
-Custom SVG line chart contribution graph generator for GitHub profile READMEs.
+GitHub Sprout is a README contribution graph widget generator. It lets developers create clean SVG contribution graphs for their GitHub profile or project README with a simple image URL.
+
+The app includes a live builder where users can enter a GitHub username, choose a theme, switch graph styles, preview the result, and copy the Markdown embed code.
+
+![GitHub Sprout preview](public/preview.png)
 
 ## Features
 
-- Dynamic line/area SVG graph for any public GitHub username
-- Themes: `dark`, `light`, `ocean`, `sunset`
-- Vercel-ready Next.js API route
-- Preview UI with README embed code
-- One-hour cache for GitHub API responses
+- Dynamic SVG endpoint for GitHub README files
+- Username-based graph generation
+- Graph styles: `heatmap`, `activity`, `streak`, `punch`
+- Themes: `github`, `ocean`, `sunset`, `grape`, `mono`, `rose`
+- Live preview builder
+- Copy-ready Markdown embed code
+- Vercel-ready Next.js app
 
-## Local Setup
+## Usage
 
-Create `.env.local`:
+After deployment, use your Vercel domain in any GitHub README:
+
+```md
+<img src="https://github-sprout.vercel.app/api/contributions?username=muhammad-muneeb3&theme=github&type=heatmap&v=3" alt="GitHub contribution graph" />
+```
+
+Change the `username`, `theme`, or `type` query params to customize the widget.
+
+## API Examples
+
+```txt
+/api/contributions?username=muhammad-muneeb3&theme=github&type=heatmap
+/api/contributions?username=muhammad-muneeb3&theme=ocean&type=activity
+/api/contributions?username=muhammad-muneeb3&theme=grape&type=streak
+/api/contributions?username=muhammad-muneeb3&theme=rose&type=punch
+```
+
+## Environment Variable
+
+The API uses GitHub GraphQL, so the deployed app needs this Vercel environment variable:
 
 ```env
 GITHUB_TOKEN=your_github_personal_access_token
 ```
 
-Run the app:
+Use a read-only GitHub personal access token. Never commit the token to the repository.
 
-```bash
-npm run dev
-```
+## Tech Stack
 
-Open:
+- Next.js
+- React
+- TypeScript
+- GitHub GraphQL API
+- Vercel
 
-```txt
-http://localhost:3000
-```
+## License
 
-Direct SVG API:
-
-```txt
-http://localhost:3000/api/contributions?username=muhammad-muneeb3&theme=dark&v=2
-```
-
-## README Usage
-
-After deploying to Vercel, use your production domain:
-
-```md
-<img src="https://your-vercel-domain.vercel.app/api/contributions?username=muhammad-muneeb3&theme=dark&v=2" alt="GitHub contribution graph" />
-```
-
-Anyone can use it by changing the username:
-
-```md
-<img src="https://your-vercel-domain.vercel.app/api/contributions?username=octocat&theme=ocean&v=2" alt="GitHub contribution graph" />
-```
-
-## Deploy
-
-Add this environment variable in Vercel project settings:
-
-```env
-GITHUB_TOKEN=your_github_personal_access_token
-```
-
-Then deploy the project from GitHub to Vercel.
+MIT

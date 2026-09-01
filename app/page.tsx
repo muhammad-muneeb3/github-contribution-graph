@@ -215,7 +215,7 @@ export default function Home() {
   const cleanUsername = username.trim() || "your-username";
   const total = 400 + (hashStr(cleanUsername) % 900);
   const svgUrl = `/api/contributions?username=${encodeURIComponent(cleanUsername)}&theme=${theme}&type=${graphType}&v=3`;
-  const embedCode = `<img src="https://your-vercel-domain.vercel.app${svgUrl}" alt="${cleanUsername}'s contribution graph" />`;
+  const embedCode = `<img src="https://github-sprout.vercel.app${svgUrl}" alt="${cleanUsername}'s contribution graph" />`;
 
   const copyCode = async () => {
     await navigator.clipboard.writeText(embedCode);
