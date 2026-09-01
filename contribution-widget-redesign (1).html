@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sprout — contribution graphs for your README</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #0a0d12;
+    --surface: #11161d;
+    --surface-2: #161c25;
+    --border: #232b36;
+    --border-soft: #1a212b;
+    --text: #e8edf3;
+    --text-dim: #7d8a9a;
+    --text-faint: #4c5866;
+
+    --g0: #161c25;
+    --g1: #0e4a2e;
+    --g2: #147a41;
+    --g3: #1fae57;
+    --g4: #3fe07a;
+
+    --radius: 6px;
+  }
+
+  *{ box-sizing: border-box; }
+
+  html{ scroll-behavior: smooth; }
+
+  body{
+    margin:0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, .display{
+    font-family: 'Space Grotesk', sans-serif;
+    letter-spacing: -0.01em;
+    margin: 0;
+  }
+
+  a{ color: inherit; }
+
+  ::selection{ background: var(--g2); color: #051a10; }
+
+  .wrap{
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 0 32px;
+  }
+
+  /* ---------- NAV ---------- */
+  nav{
+    border-bottom: 1px solid var(--border-soft);
+    padding: 20px 0;
+  }
+  .nav-row{
+    display:flex;
+    align-items:center;
+    justify-content: space-between;
+  }
+  .brand{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    font-family:'Space Grotesk', sans-serif;
+    font-weight: 700;
+    font-size: 18px;
+  }
+  .brand-mark{
+    width: 22px; height: 22px;
+    display:grid;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(3, 1fr);
+    gap: 2px;
+  }
+  .brand-mark span{ background: var(--g0); border-radius: 1px; }
+  .brand-mark span:nth-child(2){ background: var(--g2); }
+  .brand-mark span:nth-child(4){ background: var(--g3); }
+  .brand-mark span:nth-child(5){ background: var(--g4); }
+  .brand-mark span:nth-child(6){ background: var(--g2); }
+  .brand-mark span:nth-child(8){ background: var(--g1); }
+
+  .nav-links{
+    display:flex;
+    gap: 28px;
+    font-size: 13.5px;
+    color: var(--text-dim);
+  }
+  .nav-links a:hover{ color: var(--text); }
+
+  .btn{
+    display:inline-flex;
+    align-items:center;
+    gap: 8px;
+    padding: 9px 16px;
+    border-radius: var(--radius);
+    font-family:'JetBrains Mono', monospace;
+    font-size: 13.5px;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease;
+  }
+  .btn:hover{ border-color: #3a4553; background: #1b222c; }
+  .btn-primary{
+    background: var(--g3);
+    color: #04140a;
+    border-color: var(--g3);
+    font-weight: 600;
+  }
+  .btn-primary:hover{ background: var(--g4); border-color: var(--g4); }
+
+  /* ---------- HERO ---------- */
+  .hero{
+    padding: 76px 0 56px;
+  }
+  .hero-top{
+    max-width: 640px;
+  }
+  .kicker{
+    color: var(--g3);
+    font-size: 13.5px;
+    margin-bottom: 18px;
+  }
+  .kicker::before{ content: "$ "; color: var(--text-faint); }
+  h1.headline{
+    font-size: 52px;
+    font-weight: 700;
+    line-height: 1.08;
+    color: var(--text);
+  }
+  h1.headline em{
+    font-style: normal;
+    color: var(--g3);
+  }
+  .sub{
+    margin-top: 20px;
+    max-width: 480px;
+    color: var(--text-dim);
+    font-size: 15px;
+  }
+
+  /* ---------- BUILDER ---------- */
+  .builder{
+    margin-top: 56px;
+    display: grid;
+    grid-template-columns: 320px 1fr;
+    gap: 1px;
+    background: var(--border-soft);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .panel{
+    background: var(--surface);
+    padding: 28px;
+  }
+  .field{ margin-bottom: 24px; }
+  .field label{
+    display:block;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+  .field input, .field select{
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 11px 12px;
+    color: var(--text);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    outline: none;
+  }
+  .field input:focus, .field select:focus{
+    border-color: var(--g2);
+  }
+
+  .theme-row{
+    display:flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .theme-chip{
+    display:flex;
+    align-items:center;
+    gap: 7px;
+    padding: 7px 11px;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    background: var(--bg);
+  }
+  .theme-chip.active{
+    border-color: var(--g2);
+    color: var(--text);
+    background: #0f1a14;
+  }
+  .theme-dot{ width: 9px; height: 9px; border-radius: 2px; }
+
+  .code-block{
+    margin-top: 6px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 14px 16px;
+  }
+  .code-label{
+    display:flex; justify-content: space-between; align-items:center;
+    margin-bottom: 10px;
+  }
+  .code-label span{ font-size: 11.5px; color: var(--text-faint); }
+  .copy-btn{
+    background: none; border: none; color: var(--text-dim);
+    font-family: inherit; font-size: 11.5px; cursor: pointer;
+    padding: 3px 8px; border: 1px solid var(--border); border-radius: 4px;
+  }
+  .copy-btn:hover{ color: var(--text); border-color: #3a4553; }
+  pre.code{
+    margin:0;
+    font-size: 12px;
+    line-height: 1.65;
+    color: #9fb3c8;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  pre.code .tag{ color: var(--text-faint); }
+  pre.code .val{ color: var(--g4); }
+
+  /* preview panel */
+  .preview-panel{
+    padding: 0;
+    display:flex;
+    flex-direction: column;
+  }
+  .preview-head{
+    display:flex; justify-content: space-between; align-items:center;
+    padding: 16px 28px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .preview-head span{ font-size: 12.5px; color: var(--text-dim); }
+  .preview-body{
+    padding: 32px 28px 28px;
+    flex: 1;
+    display:flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .card{
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 22px 24px;
+  }
+  .card-title{
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 17px;
+    font-weight: 600;
+  }
+  .card-meta{
+    margin-top: 4px;
+    font-size: 12.5px;
+    color: var(--text-dim);
+  }
+  .grid-scroll{
+    margin-top: 22px;
+    overflow-x: auto;
+  }
+  .grid-inner{
+    display: inline-flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 720px;
+  }
+  .month-row{
+    display:flex;
+    gap: 3px;
+    padding-left: 28px;
+    font-size: 10.5px;
+    color: var(--text-faint);
+  }
+  .month-row span{ width: 42px; }
+  .grid-body{ display:flex; gap: 10px; }
+  .day-labels{
+    display:flex;
+    flex-direction: column;
+    gap: 3px;
+    font-size: 10px;
+    color: var(--text-faint);
+    padding-top: 1px;
+  }
+  .day-labels span{ height: 11px; line-height: 11px; }
+  .squares{
+    display: grid;
+    grid-auto-flow: column;
+    grid-template-rows: repeat(7, 11px);
+    gap: 3px;
+  }
+  .sq{
+    width: 11px; height: 11px;
+    border-radius: 2px;
+    background: var(--g0);
+    opacity: 0;
+    transform: scale(.4);
+  }
+  .legend{
+    display:flex; align-items:center; gap: 6px;
+    margin-top: 16px;
+    font-size: 10.5px;
+    color: var(--text-faint);
+    justify-content: flex-end;
+  }
+  .legend .sq{ opacity:1; transform:none; width:10px; height:10px; }
+
+  /* graph type tabs */
+  .graph-tabs{
+    display:flex;
+    gap: 4px;
+    margin-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .graph-tab{
+    background: none;
+    border: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12.5px;
+    color: var(--text-dim);
+    padding: 8px 4px;
+    margin-right: 18px;
+    cursor: pointer;
+    position: relative;
+    top: 1px;
+    border-bottom: 2px solid transparent;
+  }
+  .graph-tab.active{
+    color: var(--text);
+    border-bottom-color: var(--g3);
+  }
+  .graph-tab:hover{ color: var(--text); }
+
+  /* bar chart (commit activity) */
+  .bar-chart{
+    display:flex;
+    align-items:flex-end;
+    gap: 3px;
+    height: 120px;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
+  .bar-chart .bar{
+    width: 9px;
+    min-width: 9px;
+    border-radius: 2px 2px 0 0;
+    opacity: 0;
+    transform: scaleY(0);
+    transform-origin: bottom;
+  }
+
+  /* line / streak chart */
+  .line-chart{ width: 100%; height: 150px; overflow: visible; }
+  .line-chart path.area{ opacity: .18; }
+  .line-chart path.line{
+    fill: none;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-dasharray: 1400;
+    stroke-dashoffset: 1400;
+  }
+  .line-chart circle{ opacity: 0; }
+
+  /* punch card */
+  .punch-wrap{ overflow-x: auto; }
+  .punch-grid{
+    display: grid;
+    grid-template-columns: 34px repeat(24, 18px);
+    row-gap: 6px;
+    align-items:center;
+    min-width: 600px;
+  }
+  .punch-grid .row-label{
+    font-size: 10px;
+    color: var(--text-faint);
+  }
+  .punch-grid .hour-label{
+    font-size: 9px;
+    color: var(--text-faint);
+    text-align:center;
+  }
+  .punch-dot{
+    width: 14px; height: 14px;
+    border-radius: 50%;
+    margin: 0 auto;
+    opacity: 0;
+    transform: scale(0);
+  }
+
+  /* ---------- THEMES SHOWCASE ---------- */
+  .section{ padding: 64px 0; border-top: 1px solid var(--border-soft); }
+  .section-head{ max-width: 520px; margin-bottom: 40px; }
+  .section-head h2{ font-size: 28px; font-weight: 600; }
+  .section-head p{ color: var(--text-dim); margin-top: 10px; font-size: 14px; }
+
+  .theme-gallery{
+    display:grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+  }
+  .theme-card{
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+  }
+  .theme-card-name{
+    font-size: 12.5px;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+    display:flex; justify-content: space-between;
+  }
+  .mini-squares{
+    display:grid;
+    grid-template-columns: repeat(12, 1fr);
+    grid-auto-rows: 8px;
+    gap: 2px;
+  }
+  .mini-squares div{ border-radius: 1px; }
+
+  /* ---------- HOW IT WORKS ---------- */
+  .steps{
+    display:grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px;
+    background: var(--border-soft);
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .step{
+    background: var(--surface);
+    padding: 26px 24px;
+  }
+  .step-num{
+    font-family: 'Space Grotesk', sans-serif;
+    color: var(--g3);
+    font-size: 13px;
+    margin-bottom: 14px;
+  }
+  .step h3{
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .step p{ color: var(--text-dim); font-size: 13.5px; margin:0; }
+
+  footer{
+    border-top: 1px solid var(--border-soft);
+    padding: 28px 0 40px;
+    display:flex;
+    justify-content: space-between;
+    color: var(--text-faint);
+    font-size: 12.5px;
+  }
+
+  @media (max-width: 860px){
+    .builder{ grid-template-columns: 1fr; }
+    h1.headline{ font-size: 36px; }
+    .theme-gallery{ grid-template-columns: repeat(2, 1fr); }
+    .steps{ grid-template-columns: 1fr; }
+    .nav-links{ display:none; }
+  }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav-row">
+    <div class="brand">
+      <div class="brand-mark"><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+      sprout
+    </div>
+    <div class="nav-links">
+      <a href="#builder">Build</a>
+      <a href="#themes">Themes</a>
+      <a href="#how">How it works</a>
+    </div>
+    <a class="btn" href="#builder">Get your graph</a>
+  </div>
+</nav>
+
+<header class="hero wrap">
+  <div class="hero-top">
+    <div class="kicker">generate --type=readme-widget</div>
+    <h1 class="headline">A contribution graph<br>that actually looks like <em>your</em> repo.</h1>
+    <p class="sub">Pull real commit activity, render it as an SVG heatmap, and drop it into any GitHub README with one image tag. No login, no tracking script, no build step.</p>
+  </div>
+
+  <div class="builder" id="builder">
+    <div class="panel">
+      <div class="field">
+        <label>GitHub username</label>
+        <input id="username" type="text" value="muhammad-muneeb3" spellcheck="false">
+      </div>
+
+      <div class="field">
+        <label>Theme</label>
+        <div class="theme-row" id="themeRow"></div>
+      </div>
+
+      <div class="field" style="margin-bottom:0;">
+        <label>Embed in README.md</label>
+        <div class="code-block">
+          <div class="code-label">
+            <span>markdown</span>
+            <button class="copy-btn" id="copyBtn">copy</button>
+          </div>
+          <pre class="code" id="codeOut"></pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel preview-panel">
+      <div class="preview-head">
+        <span>preview.svg</span>
+        <a class="btn" href="#" onclick="return false;" style="padding:6px 12px; font-size:12px;">Open SVG</a>
+      </div>
+      <div class="preview-body">
+        <div class="card">
+          <div class="card-title" id="cardTitle">Muhammad Muneeb's contribution graph</div>
+          <div class="card-meta" id="cardMeta">@muhammad-muneeb3 · 978 contributions in the last year</div>
+
+          <div class="graph-tabs" id="graphTabs"></div>
+
+          <div id="graphMount">
+            <div class="grid-scroll">
+              <div class="grid-inner">
+                <div class="month-row" id="monthRow"></div>
+                <div class="grid-body">
+                  <div class="day-labels"><span></span><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span></div>
+                  <div class="squares" id="squares"></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="legend">
+              <span>Less</span>
+              <div class="sq" style="background:var(--g0)"></div>
+              <div class="sq" style="background:var(--g1)"></div>
+              <div class="sq" style="background:var(--g2)"></div>
+              <div class="sq" style="background:var(--g3)"></div>
+              <div class="sq" style="background:var(--g4)"></div>
+              <span>More</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section class="section" id="themes">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>Six palettes, one SVG.</h2>
+      <p>Every theme is just a different set of five colors mapped to the same contribution scale — pick whichever fits your profile.</p>
+    </div>
+    <div class="theme-gallery" id="themeGallery"></div>
+  </div>
+</section>
+
+<section class="section" id="how">
+  <div class="wrap">
+    <div class="section-head">
+      <h2>How it works</h2>
+      <p>Three steps, no dashboard to manage afterward.</p>
+    </div>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">01</div>
+        <h3>Enter your username</h3>
+        <p>Sprout reads your public contribution calendar directly from GitHub — nothing to authorize.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">02</div>
+        <h3>Pick a theme</h3>
+        <p>Choose a color scale that matches your README, or leave it on the default GitHub green.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">03</div>
+        <h3>Paste the image tag</h3>
+        <p>The graph is served as a live SVG endpoint, so it updates itself every time you push.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer class="wrap">
+  <span>sprout — contribution graphs for READMEs</span>
+  <span>built on the GitHub contributions API</span>
+</footer>
+
+<script>
+  const THEMES = {
+    github:   { name: 'github',   colors: ['#161c25', '#0e4a2e', '#147a41', '#1fae57', '#3fe07a'] },
+    ocean:    { name: 'ocean',    colors: ['#131c26', '#0b3d5c', '#0f6a95', '#2196c9', '#5fd3ff'] },
+    sunset:   { name: 'sunset',   colors: ['#20161a', '#5c1f1f', '#a3391f', '#d9642c', '#ffab5e'] },
+    grape:    { name: 'grape',    colors: ['#191624', '#3a1f5c', '#5f2f96', '#8a4fd1', '#c08bff'] },
+    mono:     { name: 'mono',     colors: ['#161616', '#343434', '#5c5c5c', '#8a8a8a', '#c6c6c6'] },
+    rose:     { name: 'rose',     colors: ['#221219', '#5c1a3a', '#9c2c5c', '#d94a86', '#ff8ec2'] },
+  };
+
+  let currentTheme = 'github';
+  let currentType = 'heatmap';
+  const months = ['Sep','Oct','Nov','Dec','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug'];
+  const GRAPH_TYPES = [
+    { key: 'heatmap', label: 'Heatmap' },
+    { key: 'activity', label: 'Activity' },
+    { key: 'streak',   label: 'Streak' },
+    { key: 'punch',    label: 'Punch card' },
+  ];
+
+  function seededRandom(seed){
+    let x = Math.sin(seed) * 10000;
+    return x - Math.floor(x);
+  }
+
+  function hashStr(str){
+    let h = 0;
+    for(let i=0;i<str.length;i++){ h = (h * 31 + str.charCodeAt(i)) >>> 0; }
+    return h;
+  }
+
+  function buildLevels(username){
+    const seed = hashStr(username || 'sprout');
+    const levels = [];
+    for(let i=0;i<371;i++){
+      const r = seededRandom(seed + i * 7.13);
+      let level;
+      if(r < 0.42) level = 0;
+      else if(r < 0.64) level = 1;
+      else if(r < 0.80) level = 2;
+      else if(r < 0.93) level = 3;
+      else level = 4;
+      // occasional streak boost
+      if(seededRandom(seed + i * 3.1) > 0.965) level = 4;
+      levels.push(level);
+    }
+    return levels;
+  }
+
+  function renderThemeRow(){
+    const row = document.getElementById('themeRow');
+    row.innerHTML = '';
+    Object.keys(THEMES).forEach(key=>{
+      const t = THEMES[key];
+      const chip = document.createElement('div');
+      chip.className = 'theme-chip' + (key === currentTheme ? ' active' : '');
+      chip.dataset.key = key;
+      chip.innerHTML = `<span class="theme-dot" style="background:${t.colors[3]}"></span>${t.name}`;
+      chip.addEventListener('click', ()=>{ currentTheme = key; renderAll(); });
+      row.appendChild(chip);
+    });
+  }
+
+  function renderTabs(){
+    const row = document.getElementById('graphTabs');
+    row.innerHTML = '';
+    GRAPH_TYPES.forEach(t=>{
+      const btn = document.createElement('button');
+      btn.className = 'graph-tab' + (t.key === currentType ? ' active' : '');
+      btn.textContent = t.label;
+      btn.addEventListener('click', ()=>{ currentType = t.key; renderAll(true); });
+      row.appendChild(btn);
+    });
+  }
+
+  function renderGraph(username, animate){
+    const mount = document.getElementById('graphMount');
+    if(currentType === 'heatmap') renderHeatmap(mount, username, animate);
+    else if(currentType === 'activity') renderBar(mount, username, animate);
+    else if(currentType === 'streak') renderLine(mount, username, animate);
+    else if(currentType === 'punch') renderPunch(mount, username, animate);
+  }
+
+  function renderHeatmap(mount, username, animate){
+    mount.innerHTML = `
+      <div class="grid-scroll">
+        <div class="grid-inner">
+          <div class="month-row">${months.map(m => `<span>${m}</span>`).join('')}</div>
+          <div class="grid-body">
+            <div class="day-labels"><span></span><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span></div>
+            <div class="squares" id="squares"></div>
+          </div>
+        </div>
+      </div>
+      <div class="legend">
+        <span>Less</span>
+        <div class="sq" style="background:var(--g0)"></div>
+        <div class="sq" style="background:var(--g1)"></div>
+        <div class="sq" style="background:var(--g2)"></div>
+        <div class="sq" style="background:var(--g3)"></div>
+        <div class="sq" style="background:var(--g4)"></div>
+        <span>More</span>
+      </div>`;
+
+    const container = document.getElementById('squares');
+    const levels = buildLevels(username);
+    const colors = THEMES[currentTheme].colors;
+
+    levels.forEach(lvl=>{
+      const sq = document.createElement('div');
+      sq.className = 'sq';
+      sq.style.background = colors[lvl];
+      container.appendChild(sq);
+    });
+
+    requestAnimationFrame(()=>{
+      container.querySelectorAll('.sq').forEach((sq, i)=>{
+        const delay = animate ? (i * 2.2) : 0;
+        sq.style.transition = `opacity .3s ease ${delay}ms, transform .3s ease ${delay}ms`;
+        sq.style.opacity = '1';
+        sq.style.transform = 'scale(1)';
+      });
+    });
+  }
+
+  function renderBar(mount, username, animate){
+    mount.innerHTML = `<div class="bar-chart" id="barChart"></div>
+      <div class="legend"><span>53 weeks of commit activity</span></div>`;
+
+    const container = document.getElementById('barChart');
+    const levels = buildLevels(username);
+    const colors = THEMES[currentTheme].colors;
+    const weeks = [];
+    for(let w=0; w<53; w++){
+      const chunk = levels.slice(w*7, w*7+7);
+      weeks.push(chunk.reduce((a,b)=>a+b, 0));
+    }
+    const max = Math.max(...weeks, 1);
+
+    weeks.forEach(total=>{
+      const bar = document.createElement('div');
+      bar.className = 'bar';
+      const pct = Math.max(6, (total / max) * 100);
+      const lvl = total === 0 ? 0 : Math.min(4, Math.ceil((total / max) * 4));
+      bar.style.height = pct + '%';
+      bar.style.background = colors[lvl];
+      container.appendChild(bar);
+    });
+
+    requestAnimationFrame(()=>{
+      container.querySelectorAll('.bar').forEach((bar, i)=>{
+        const delay = animate ? (i * 8) : 0;
+        bar.style.transition = `opacity .25s ease ${delay}ms, transform .3s ease ${delay}ms`;
+        bar.style.opacity = '1';
+        bar.style.transform = 'scaleY(1)';
+      });
+    });
+  }
+
+  function renderLine(mount, username, animate){
+    mount.innerHTML = `
+      <svg class="line-chart" id="lineSvg" viewBox="0 0 700 150" preserveAspectRatio="none">
+        <path class="area" id="lineArea"></path>
+        <path class="line" id="linePath"></path>
+      </svg>
+      <div class="legend"><span>daily commits over the last year</span></div>`;
+
+    const seed = hashStr(username || 'sprout');
+    const points = 60;
+    const values = [];
+    for(let i=0;i<points;i++){
+      const base = seededRandom(seed + i * 4.4) * 22;
+      const spike = seededRandom(seed + i * 9.1) > 0.9 ? 20 : 0;
+      values.push(base + spike);
+    }
+    const max = Math.max(...values, 1);
+    const w = 700, h = 150, padY = 14;
+    const stepX = w / (points - 1);
+
+    const coords = values.map((v,i)=>{
+      const x = i * stepX;
+      const y = h - padY - (v / max) * (h - padY * 2);
+      return [x, y];
+    });
+
+    const linePath = coords.map((p,i)=> (i===0?'M':'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+    const areaPath = linePath + ` L${w},${h} L0,${h} Z`;
+
+    const colors = THEMES[currentTheme].colors;
+    const line = document.getElementById('linePath');
+    const area = document.getElementById('lineArea');
+    line.setAttribute('d', linePath);
+    line.style.stroke = colors[3];
+    area.setAttribute('d', areaPath);
+    area.style.fill = colors[2];
+
+    requestAnimationFrame(()=>{
+      const len = line.getTotalLength();
+      line.style.strokeDasharray = len;
+      line.style.strokeDashoffset = len;
+      line.style.transition = animate ? 'stroke-dashoffset 1s ease' : 'none';
+      requestAnimationFrame(()=>{ line.style.strokeDashoffset = '0'; });
+    });
+  }
+
+  function renderPunch(mount, username, animate){
+    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    let rows = '';
+    days.forEach(d=>{
+      rows += `<div class="row-label">${d}</div>`;
+      for(let hr=0; hr<24; hr++){
+        rows += `<div class="punch-dot" data-day="${d}" data-hr="${hr}"></div>`;
+      }
+    });
+
+    mount.innerHTML = `
+      <div class="punch-wrap">
+        <div class="punch-grid" id="punchGrid">
+          <div></div>${Array.from({length:24},(_,i)=> i % 3 === 0 ? `<div class="hour-label">${i}</div>` : '<div></div>').join('')}
+          ${rows}
+        </div>
+      </div>
+      <div class="legend"><span>activity by day &amp; hour (UTC)</span></div>`;
+
+    const seed = hashStr(username || 'sprout');
+    const colors = THEMES[currentTheme].colors;
+    const dots = document.querySelectorAll('#punchGrid .punch-dot');
+
+    dots.forEach((dot, i)=>{
+      const r = seededRandom(seed + i * 6.66);
+      const lvl = r < 0.55 ? 0 : r < 0.75 ? 1 : r < 0.88 ? 2 : r < 0.96 ? 3 : 4;
+      const scale = 0.25 + lvl * 0.19;
+      dot.style.background = colors[lvl];
+      dot.dataset.scale = scale;
+    });
+
+    requestAnimationFrame(()=>{
+      dots.forEach((dot, i)=>{
+        const delay = animate ? (i * 1.4) : 0;
+        dot.style.transition = `opacity .25s ease ${delay}ms, transform .25s ease ${delay}ms`;
+        dot.style.opacity = '1';
+        dot.style.transform = `scale(${dot.dataset.scale})`;
+      });
+    });
+  }
+
+  function renderCode(){
+    const username = document.getElementById('username').value.trim() || 'your-username';
+    const code = document.getElementById('codeOut');
+    code.innerHTML =
+`<span class="tag">&lt;img</span> src<span class="tag">=</span>"<span class="val">https://sprout.dev/api/graph?user=${username}&type=${currentType}&theme=${currentTheme}</span>"
+     alt<span class="tag">=</span>"${username}'s contribution graph" <span class="tag">/&gt;</span>`;
+  }
+
+  function renderCard(){
+    const username = document.getElementById('username').value.trim() || 'your-username';
+    const displayName = username
+      .split(/[-_.]/)
+      .map(w => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
+    const total = 400 + (hashStr(username) % 900);
+    document.getElementById('cardTitle').textContent = `${displayName}'s contribution graph`;
+    document.getElementById('cardMeta').textContent = `@${username} · ${total} contributions in the last year`;
+  }
+
+  function renderGallery(){
+    const gallery = document.getElementById('themeGallery');
+    gallery.innerHTML = '';
+    Object.keys(THEMES).forEach(key=>{
+      const t = THEMES[key];
+      const card = document.createElement('div');
+      card.className = 'theme-card';
+      const seed = hashStr(key);
+      let squares = '';
+      for(let i=0;i<48;i++){
+        const r = seededRandom(seed + i * 5.7);
+        let lvl = r < 0.4 ? 0 : r < 0.62 ? 1 : r < 0.8 ? 2 : r < 0.93 ? 3 : 4;
+        squares += `<div style="background:${t.colors[lvl]}"></div>`;
+      }
+      card.innerHTML = `<div class="theme-card-name"><span>${t.name}</span></div><div class="mini-squares">${squares}</div>`;
+      gallery.appendChild(card);
+    });
+  }
+
+  function renderAll(animate){
+    renderThemeRow();
+    renderTabs();
+    renderGraph(document.getElementById('username').value.trim(), animate);
+    renderCode();
+    renderCard();
+  }
+
+  document.getElementById('username').addEventListener('input', ()=> renderAll(false));
+  document.getElementById('copyBtn').addEventListener('click', (e)=>{
+    const text = document.getElementById('codeOut').textContent;
+    navigator.clipboard.writeText(text).then(()=>{
+      e.target.textContent = 'copied';
+      setTimeout(()=> e.target.textContent = 'copy', 1200);
+    });
+  });
+
+  renderGallery();
+  renderAll(true);
+</script>
+
+</body>
+</html>
