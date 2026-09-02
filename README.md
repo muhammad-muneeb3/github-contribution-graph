@@ -10,9 +10,10 @@ The app includes a live builder where users can enter a GitHub username, choose 
 
 - Dynamic SVG endpoint for GitHub README files
 - Username-based graph generation
-- Graph styles: `heatmap`, `activity`, `streak`, `punch`
-- Themes: `github`, `ocean`, `sunset`, `grape`, `mono`, `rose`
+- Graph styles: `heatmap`, `activity`, `streak`, `punch`, `stats`, `summary`, `profile`
+- Themes: `github`, `ocean`, `sunset`, `grape`, `mono`, `rose`, `white`
 - Live preview builder
+- API docs page at `/docs`
 - Copy-ready Markdown embed code
 - Vercel-ready Next.js app
 
@@ -21,10 +22,22 @@ The app includes a live builder where users can enter a GitHub username, choose 
 After deployment, use your Vercel domain in any GitHub README:
 
 ```md
-<img src="https://github-sprout.vercel.app/api/contributions?username=muhammad-muneeb3&theme=github&type=heatmap&size=normal&v=5" alt="GitHub contribution graph" />
+<img src="https://github-sprout.vercel.app/api/contributions?username=muhammad-muneeb3&theme=github&type=heatmap&size=normal&v=11" alt="GitHub contribution graph" />
 ```
 
 Change the `username`, `theme`, `type`, or `size` query params to customize the widget.
+
+Advanced params are also supported:
+
+- `hide_title=true`
+- `hide_total=true`
+- `hide_legend=true`
+- `show_border=false`
+- `avatar=false`
+- `radius=12`
+- `bg=0a0d12`
+- `text=e8edf3`
+- `border=232b36`
 
 ## API Examples
 
@@ -33,6 +46,9 @@ Change the `username`, `theme`, `type`, or `size` query params to customize the 
 /api/contributions?username=muhammad-muneeb3&theme=ocean&type=activity
 /api/contributions?username=muhammad-muneeb3&theme=grape&type=streak
 /api/contributions?username=muhammad-muneeb3&theme=rose&type=punch
+/api/contributions?username=muhammad-muneeb3&theme=github&type=stats
+/api/contributions?username=muhammad-muneeb3&theme=mono&type=summary
+/api/contributions?username=muhammad-muneeb3&theme=ocean&type=profile
 ```
 
 ## Environment Variable

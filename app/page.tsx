@@ -9,6 +9,17 @@ const themes = {
   grape: ["#191624", "#3a1f5c", "#5f2f96", "#8a4fd1", "#c08bff"],
   mono: ["#161616", "#343434", "#5c5c5c", "#8a8a8a", "#c6c6c6"],
   rose: ["#221219", "#5c1a3a", "#9c2c5c", "#d94a86", "#ff8ec2"],
+  white: ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"],
+};
+
+const themeSurfaces = {
+  github: { bg: "#0a0d12", text: "#e8edf3", border: "#232b36" },
+  ocean: { bg: "#071013", text: "#e8fbff", border: "#24424b" },
+  sunset: { bg: "#160f14", text: "#fff3f6", border: "#513142" },
+  grape: { bg: "#120f1b", text: "#f2ebff", border: "#33264a" },
+  mono: { bg: "#101010", text: "#f0f0f0", border: "#303030" },
+  rose: { bg: "#160d12", text: "#fff0f7", border: "#452032" },
+  white: { bg: "#ffffff", text: "#111111", border: "#d0d7de" },
 };
 
 const graphTypes = [
@@ -16,6 +27,9 @@ const graphTypes = [
   { key: "activity", label: "Activity" },
   { key: "streak", label: "Streak" },
   { key: "punch", label: "Punch card" },
+  { key: "stats", label: "Stats" },
+  { key: "summary", label: "Summary" },
+  { key: "profile", label: "Profile" },
 ];
 
 const sizeOptions = [
@@ -65,7 +79,7 @@ function getUsernameError(value: string) {
 }
 
 function extractSvgError(svg: string) {
-  if (!svg.includes("Contribution graph unavailable")) return "";
+  if (!svg.includes("Contribution graph unavailable") && !svg.includes("No public contribution data found")) return "";
   const messages = Array.from(svg.matchAll(/<text[^>]*>(.*?)<\/text>/g)).map((match) =>
     match[1]
       .replace(/&amp;/g, "&")
@@ -76,27 +90,57 @@ function extractSvgError(svg: string) {
   return messages.at(-1) || "Contribution graph unavailable.";
 }
 
+function stripHash(value: string) {
+  return value.replace(/^#/, "");
+}
+
 export default function Home() {
-  const [username, setUsername] = useState("muhammad-muneeb3");
+  const [username, setUsername] = useState("");
   const [theme, setTheme] = useState<ThemeName>("github");
   const [graphType, setGraphType] = useState<GraphType>("heatmap");
   const [size, setSize] = useState<SizeName>("normal");
+  const [showTitle, setShowTitle] = useState(true);
+  const [showTotal, setShowTotal] = useState(true);
+  const [showLegend, setShowLegend] = useState(true);
+  const [showBorder, setShowBorder] = useState(true);
+  const [showAvatar, setShowAvatar] = useState(true);
+  const [radius, setRadius] = useState(10);
+  const [customColors, setCustomColors] = useState(themeSurfaces.github);
   const [copied, setCopied] = useState(false);
   const [previewState, setPreviewState] = useState<PreviewState>({ status: "idle", message: "" });
   const usernameError = getUsernameError(username);
+  const isUsernameEmpty = !username.trim();
   const canGenerate = !usernameError;
   const cleanUsername = username.trim();
   const selectedSize = sizeOptions.find((option) => option.key === size) || sizeOptions[1];
-  const svgUrl = canGenerate
-    ? `/api/contributions?username=${encodeURIComponent(cleanUsername)}&theme=${theme}&type=${graphType}&size=${size}&v=5`
-    : "";
+  const svgUrl = canGenerate ? (() => {
+    const params = new URLSearchParams({
+      username: cleanUsername,
+      theme,
+      type: graphType,
+      size,
+      radius: String(radius),
+      bg: stripHash(customColors.bg),
+      text: stripHash(customColors.text),
+      border: stripHash(customColors.border),
+      v: "11",
+    });
+
+    if (!showTitle) params.set("hide_title", "true");
+    if (!showTotal) params.set("hide_total", "true");
+    if (!showLegend) params.set("hide_legend", "true");
+    if (!showBorder) params.set("show_border", "false");
+    if (!showAvatar) params.set("avatar", "false");
+
+    return `/api/contributions?${params.toString()}`;
+  })() : "";
   const embedCode = canGenerate
     ? `<img src="https://github-sprout.vercel.app${svgUrl}" alt="${cleanUsername}'s contribution graph" />`
-    : "Fix the username to generate embed code.";
+    : "Enter a GitHub username to generate embed code.";
   const previewStyle = { "--preview-width": `${selectedSize.width}px` } as CSSProperties;
   const displayedPreviewState = svgUrl
     ? previewState
-    : { status: "idle" as const, message: "Fix the username to preview the SVG." };
+    : { status: "idle" as const, message: "Enter a GitHub username to preview." };
 
   useEffect(() => {
     if (!svgUrl) {
@@ -134,6 +178,17 @@ export default function Home() {
     window.setTimeout(() => setCopied(false), 1200);
   };
 
+  const selectTheme = (nextTheme: ThemeName) => {
+    setTheme(nextTheme);
+    setCustomColors(themeSurfaces[nextTheme]);
+  };
+
+  const updateRadius = (value: string) => {
+    const nextRadius = Number(value);
+    if (!Number.isFinite(nextRadius)) return;
+    setRadius(Math.min(24, Math.max(0, Math.round(nextRadius))));
+  };
+
   return (
     <>
       <nav>
@@ -149,7 +204,7 @@ export default function Home() {
           <div className="nav-links">
             <a href="#builder">Build</a>
             <a href="#themes">Themes</a>
-            <a href="#how">How it works</a>
+            <a href="/docs">Docs</a>
           </div>
           <a className="btn" href="#builder">
             Get your graph
@@ -170,22 +225,36 @@ export default function Home() {
           </p>
         </div>
 
+        <div className="embed-strip">
+          <label>Embed in README.md</label>
+          <div className="code-block">
+            <div className="code-label">
+              <span>markdown</span>
+              <button className="copy-btn" type="button" onClick={copyCode} disabled={!canGenerate}>
+                {copied ? "copied" : "copy"}
+              </button>
+            </div>
+            <pre className="code">{embedCode}</pre>
+          </div>
+        </div>
+
         <div className="builder" id="builder">
           <div className="panel">
             <div className="field">
               <label htmlFor="username">GitHub username</label>
               <input
                 id="username"
-                className={usernameError ? "invalid" : ""}
+                className={usernameError && !isUsernameEmpty ? "invalid" : ""}
                 type="text"
                 value={username}
+                placeholder="muhammad-muneeb3"
                 spellCheck={false}
                 aria-invalid={Boolean(usernameError)}
                 aria-describedby="username-error"
                 onChange={(event) => setUsername(event.target.value)}
               />
-              {usernameError && (
-                <div className="field-error" id="username-error">
+              {(usernameError || isUsernameEmpty) && (
+                <div className={isUsernameEmpty ? "field-hint" : "field-error"} id="username-error">
                   {usernameError}
                 </div>
               )}
@@ -199,7 +268,7 @@ export default function Home() {
                     className={`theme-chip ${key === theme ? "active" : ""}`}
                     key={key}
                     type="button"
-                    onClick={() => setTheme(key as ThemeName)}
+                    onClick={() => selectTheme(key as ThemeName)}
                   >
                     <span className="theme-dot" style={{ background: palette[3] }} />
                     {key}
@@ -224,18 +293,78 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="field field-last">
-              <label>Embed in README.md</label>
-              <div className="code-block">
-                <div className="code-label">
-                  <span>markdown</span>
-                  <button className="copy-btn" type="button" onClick={copyCode} disabled={!canGenerate}>
-                    {copied ? "copied" : "copy"}
-                  </button>
-                </div>
-                <pre className="code">{embedCode}</pre>
+            <div className="field">
+              <label>Advanced options</label>
+              <div className="toggle-grid">
+                <label className="toggle-row">
+                  <input type="checkbox" checked={showTitle} onChange={(event) => setShowTitle(event.target.checked)} />
+                  <span className="toggle-box" aria-hidden="true" />
+                  <span>Title</span>
+                </label>
+                <label className="toggle-row">
+                  <input type="checkbox" checked={showTotal} onChange={(event) => setShowTotal(event.target.checked)} />
+                  <span className="toggle-box" aria-hidden="true" />
+                  <span>Total</span>
+                </label>
+                <label className="toggle-row">
+                  <input type="checkbox" checked={showLegend} onChange={(event) => setShowLegend(event.target.checked)} />
+                  <span className="toggle-box" aria-hidden="true" />
+                  <span>Legend</span>
+                </label>
+                <label className="toggle-row">
+                  <input type="checkbox" checked={showBorder} onChange={(event) => setShowBorder(event.target.checked)} />
+                  <span className="toggle-box" aria-hidden="true" />
+                  <span>Border</span>
+                </label>
+                <label className="toggle-row">
+                  <input type="checkbox" checked={showAvatar} onChange={(event) => setShowAvatar(event.target.checked)} />
+                  <span className="toggle-box" aria-hidden="true" />
+                  <span>Avatar</span>
+                </label>
               </div>
             </div>
+
+            <div className="field">
+              <div className="label-row">
+                <label htmlFor="radius">Border radius</label>
+                <span>{radius}px</span>
+              </div>
+              <input id="radius" className="range-input" type="range" min="0" max="24" value={radius} onChange={(event) => updateRadius(event.target.value)} />
+            </div>
+
+            <div className="field">
+              <label>SVG colors</label>
+              <div className="color-grid">
+                <label className="color-control">
+                  <span>Background</span>
+                  <input
+                    aria-label="Background color"
+                    type="color"
+                    value={customColors.bg}
+                    onChange={(event) => setCustomColors((colors) => ({ ...colors, bg: event.target.value }))}
+                  />
+                </label>
+                <label className="color-control">
+                  <span>Text</span>
+                  <input
+                    aria-label="Text color"
+                    type="color"
+                    value={customColors.text}
+                    onChange={(event) => setCustomColors((colors) => ({ ...colors, text: event.target.value }))}
+                  />
+                </label>
+                <label className="color-control">
+                  <span>Border</span>
+                  <input
+                    aria-label="Border color"
+                    type="color"
+                    value={customColors.border}
+                    onChange={(event) => setCustomColors((colors) => ({ ...colors, border: event.target.value }))}
+                  />
+                </label>
+              </div>
+            </div>
+
           </div>
 
           <div className="panel preview-panel">

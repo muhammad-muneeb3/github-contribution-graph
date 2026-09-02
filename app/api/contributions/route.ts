@@ -15,6 +15,9 @@ type GitHubContributionResponse = {
       login: string;
       name: string | null;
       contributionsCollection: {
+        hasAnyContributions: boolean;
+        hasAnyRestrictedContributions: boolean;
+        restrictedContributionsCount: number;
         contributionCalendar: {
           totalContributions: number;
           weeks: ContributionWeek[];
@@ -22,6 +25,16 @@ type GitHubContributionResponse = {
       };
     } | null;
   };
+  errors?: GitHubGraphQLError[];
+};
+
+type GitHubUserResponse = {
+  avatar_url?: string;
+};
+
+type GitHubGraphQLError = {
+  message?: string;
+  type?: string;
 };
 
 const themes = {
@@ -31,18 +44,36 @@ const themes = {
   grape: { bg: "#120f1b", card: "#151020", border: "#33264a", text: "#f2ebff", muted: "#b69bdc", grid: "#2e2440", colors: ["#191624", "#3a1f5c", "#5f2f96", "#8a4fd1", "#c08bff"] },
   mono: { bg: "#101010", card: "#111111", border: "#303030", text: "#f0f0f0", muted: "#9a9a9a", grid: "#2a2a2a", colors: ["#161616", "#343434", "#5c5c5c", "#8a8a8a", "#c6c6c6"] },
   rose: { bg: "#160d12", card: "#1b0f15", border: "#452032", text: "#fff0f7", muted: "#dfa1bd", grid: "#3a1b2a", colors: ["#221219", "#5c1a3a", "#9c2c5c", "#d94a86", "#ff8ec2"] },
+  white: { bg: "#ffffff", card: "#f6f8fa", border: "#d0d7de", text: "#111111", muted: "#57606a", grid: "#d0d7de", colors: ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"] },
 } as const;
 
 type ThemeName = keyof typeof themes;
-type GraphType = "heatmap" | "activity" | "streak" | "punch";
+type GraphType = "heatmap" | "activity" | "streak" | "punch" | "stats" | "summary" | "profile";
 type SvgSize = "compact" | "normal" | "wide";
-type Theme = (typeof themes)[ThemeName];
+type Theme = {
+  bg: string;
+  card: string;
+  border: string;
+  text: string;
+  muted: string;
+  grid: string;
+  colors: readonly string[];
+};
+type RenderOptions = {
+  showTitle: boolean;
+  showTotal: boolean;
+  showLegend: boolean;
+  showBorder: boolean;
+  showAvatar: boolean;
+  radius: number;
+};
 
 const sizes: Record<SvgSize, number> = {
   compact: 680,
   normal: 900,
   wide: 1080,
 };
+const githubTimeoutMs = 12000;
 
 const query = `
   query Contributions($username: String!) {
@@ -50,6 +81,9 @@ const query = `
       login
       name
       contributionsCollection {
+        hasAnyContributions
+        hasAnyRestrictedContributions
+        restrictedContributionsCount
         contributionCalendar {
           totalContributions
           weeks {
@@ -66,6 +100,122 @@ const query = `
 
 function escapeXml(value: string) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function parseBoolean(value: string | null, fallback: boolean) {
+  if (value === null) return fallback;
+  if (["true", "1", "yes"].includes(value.toLowerCase())) return true;
+  if (["false", "0", "no"].includes(value.toLowerCase())) return false;
+  return fallback;
+}
+
+function parseRadius(value: string | null) {
+  const radius = Number(value);
+  if (!Number.isFinite(radius)) return 10;
+  return Math.min(24, Math.max(0, Math.round(radius)));
+}
+
+function parseHexColor(value: string | null, fallback: string) {
+  if (!value) return fallback;
+  const hex = value.trim().replace(/^#/, "");
+  if (!/^[a-fA-F0-9]{6}$/.test(hex)) return fallback;
+  return `#${hex.toLowerCase()}`;
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let index = 0; index < bytes.byteLength; index += 1) {
+    binary += String.fromCharCode(bytes[index]);
+  }
+  return btoa(binary);
+}
+
+async function fetchImageDataUri(url: string, token: string) {
+  if (!url) return "";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "image/*",
+      },
+      signal: controller.signal,
+      next: { revalidate: 86400 },
+    });
+    if (!response.ok) return "";
+
+    const contentType = response.headers.get("content-type") || "image/png";
+    if (!contentType.startsWith("image/")) return "";
+
+    return `data:${contentType};base64,${arrayBufferToBase64(await response.arrayBuffer())}`;
+  } catch {
+    return "";
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchUserAvatarUrl(username: string, token: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+
+  try {
+    const response = await fetch(`https://api.github.com/users/${encodeURIComponent(username)}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+      },
+      signal: controller.signal,
+      next: { revalidate: 86400 },
+    });
+    if (!response.ok) return "";
+
+    const user = (await response.json()) as GitHubUserResponse;
+    return user.avatar_url || "";
+  } catch {
+    return "";
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function formatRateLimitReset(value: string | null) {
+  if (!value) return "";
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp)) return "";
+  return new Date(timestamp * 1000).toISOString().replace("T", " ").replace(".000Z", " UTC");
+}
+
+function friendlyHttpError(response: Response) {
+  if (response.status === 401) return "GitHub token is invalid or expired.";
+  if (response.status === 403) {
+    const remaining = response.headers.get("x-ratelimit-remaining");
+    if (remaining === "0") {
+      const reset = formatRateLimitReset(response.headers.get("x-ratelimit-reset"));
+      return reset ? `GitHub rate limit reached. Try again after ${reset}.` : "GitHub rate limit reached. Try again later.";
+    }
+    return "GitHub API access was forbidden. Check token permissions.";
+  }
+  if (response.status === 404) return "GitHub API endpoint was not found.";
+  if (response.status === 429) return "GitHub is rate limiting requests. Try again later.";
+  if (response.status >= 500) return "GitHub API is temporarily unavailable.";
+  return `GitHub API returned ${response.status}.`;
+}
+
+function friendlyGraphQLError(errors: GitHubGraphQLError[] | undefined) {
+  if (!errors?.length) return "";
+  const message = errors.map((error) => error.message || "").join(" ").toLowerCase();
+  const type = errors.map((error) => error.type || "").join(" ").toLowerCase();
+
+  if (message.includes("rate limit") || type.includes("rate")) return "GitHub rate limit reached. Try again later.";
+  if (message.includes("bad credentials") || message.includes("expired") || message.includes("unauthorized")) return "GitHub token is invalid or expired.";
+  if (message.includes("forbidden") || message.includes("permission")) return "GitHub API access was forbidden. Check token permissions.";
+  if (message.includes("not found") || message.includes("could not resolve to a user")) return "GitHub user not found. Check the username and try again.";
+
+  return errors[0]?.message || "GitHub returned a GraphQL error.";
 }
 
 function levelForCount(count: number, max: number) {
@@ -90,23 +240,42 @@ function flattenWeeks(weeks: ContributionWeek[]) {
   return weeks.flatMap((week) => week.contributionDays).sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function shell({ username, displayName, total, theme, body, height = 260, outputWidth = 900 }: {
+function getContentTop(context: RenderContext, defaultTop: number) {
+  let offset = 0;
+  if (!context.options.showTitle) offset += 26;
+  if (!context.options.showTotal) offset += 16;
+  return Math.max(76, defaultTop - offset);
+}
+
+function shell({ username, displayName, total, theme, options, body, height = 260, outputWidth = 900 }: {
   username: string;
   displayName: string;
   total: number;
   theme: Theme;
+  options: RenderOptions;
   body: string;
   height?: number;
   outputWidth?: number;
 }) {
   const viewBoxWidth = 900;
   const outputHeight = Math.round((height * outputWidth) / viewBoxWidth);
+  const borderRadius = Math.max(0, options.radius - 0.5);
+  const title = options.showTitle
+    ? `<text x="32" y="36" fill="${theme.text}" font-family="JetBrains Mono, Consolas, monospace" font-size="18" font-weight="700">${escapeXml(displayName)}'s contribution graph</text>`
+    : "";
+  const metaY = options.showTitle ? 62 : 38;
+  const metaText = options.showTotal ? `@${username} - ${total} contributions in the last year` : `@${username}`;
+  const meta = `<text x="32" y="${metaY}" fill="${theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="13">${escapeXml(metaText)}</text>`;
+  const border = options.showBorder
+    ? `<rect x="0.5" y="0.5" width="${viewBoxWidth - 1}" height="${height - 1}" rx="${borderRadius}" fill="none" stroke="${theme.border}"/>`
+    : "";
+
   return `
-    <svg width="${outputWidth}" height="${outputHeight}" viewBox="0 0 ${viewBoxWidth} ${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${escapeXml(username)} contribution graph">
-      <rect width="${viewBoxWidth}" height="${height}" rx="10" fill="${theme.bg}"/>
-      <rect x="0.5" y="0.5" width="${viewBoxWidth - 1}" height="${height - 1}" rx="9.5" fill="none" stroke="${theme.border}"/>
-      <text x="32" y="36" fill="${theme.text}" font-family="JetBrains Mono, Consolas, monospace" font-size="18" font-weight="700">${escapeXml(displayName)}'s contribution graph</text>
-      <text x="32" y="62" fill="${theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="13">@${escapeXml(username)} - ${total} contributions in the last year</text>
+    <svg width="${outputWidth}" height="${outputHeight}" viewBox="0 0 ${viewBoxWidth} ${height}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" role="img" aria-label="${escapeXml(username)} contribution graph">
+      <rect width="${viewBoxWidth}" height="${height}" rx="${options.radius}" fill="${theme.bg}"/>
+      ${border}
+      ${title}
+      ${meta}
       ${body}
     </svg>
   `.trim();
@@ -117,13 +286,13 @@ function renderHeatmap(days: ContributionDay[], context: RenderContext) {
   const cell = 11;
   const gap = 4;
   const left = 82;
-  const top = 104;
+  const top = getContentTop(context, 104);
   const max = Math.max(...days.map((day) => day.contributionCount), 1);
   const recent = days.slice(-371);
   const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
   const monthLabels = recent
     .filter((day, index) => index % 31 === 0)
-    .map((day, index) => `<text x="${left + index * 64}" y="92" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="11">${monthNames[new Date(`${day.date}T00:00:00Z`).getUTCMonth()]}</text>`)
+    .map((day, index) => `<text x="${left + index * 64}" y="${top - 12}" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="11">${monthNames[new Date(`${day.date}T00:00:00Z`).getUTCMonth()]}</text>`)
     .join("");
   const squares = recent
     .map((day, index) => {
@@ -136,19 +305,24 @@ function renderHeatmap(days: ContributionDay[], context: RenderContext) {
   const legend = context.theme.colors
     .map((color, index) => `<rect x="${width - 156 + index * 18}" y="226" width="11" height="11" rx="2" fill="${color}"/>`)
     .join("");
+  const legendBlock = context.options.showLegend
+    ? `
+      <text x="${width - 198}" y="236" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="11">Less</text>
+      ${legend}
+      <text x="${width - 58}" y="236" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="11">More</text>
+    `
+    : "";
 
   return shell({
     ...context,
     height: 260,
     body: `
       ${monthLabels}
-      <text x="32" y="132" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="11">Mon</text>
-      <text x="32" y="162" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="11">Wed</text>
-      <text x="32" y="192" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="11">Fri</text>
+      <text x="32" y="${top + 28}" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="11">Mon</text>
+      <text x="32" y="${top + 58}" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="11">Wed</text>
+      <text x="32" y="${top + 88}" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="11">Fri</text>
       ${squares}
-      <text x="${width - 198}" y="236" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="11">Less</text>
-      ${legend}
-      <text x="${width - 58}" y="236" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="11">More</text>
+      ${legendBlock}
     `,
   });
 }
@@ -157,7 +331,7 @@ function renderActivity(weeks: ContributionWeek[], context: RenderContext) {
   const totals = weeks.slice(-53).map((week) => week.contributionDays.reduce((sum, day) => sum + day.contributionCount, 0));
   const max = Math.max(...totals, 1);
   const chartLeft = 54;
-  const chartTop = 92;
+  const chartTop = getContentTop(context, 92);
   const chartHeight = 120;
   const barWidth = 11;
   const gap = 5;
@@ -176,7 +350,7 @@ function renderActivity(weeks: ContributionWeek[], context: RenderContext) {
     body: `
       <line x1="${chartLeft}" y1="${chartTop + chartHeight}" x2="846" y2="${chartTop + chartHeight}" stroke="${context.theme.border}"/>
       ${bars}
-      <text x="32" y="236" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="12">53 weeks of commit activity</text>
+      ${context.options.showLegend ? `<text x="32" y="236" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="12">53 weeks of commit activity</text>` : ""}
     `,
   });
 }
@@ -185,7 +359,7 @@ function renderStreak(context: RenderContext) {
   const seed = hashStr(context.username || "sprout");
   const pointCount = 60;
   const chartLeft = 32;
-  const chartTop = 86;
+  const chartTop = getContentTop(context, 86);
   const chartWidth = 836;
   const chartHeight = 150;
   const padY = 14;
@@ -210,7 +384,7 @@ function renderStreak(context: RenderContext) {
     body: `
       <path d="${area}" fill="${context.theme.colors[2]}" opacity="0.18"/>
       <path d="${line}" fill="none" stroke="${context.theme.colors[3]}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      <text x="32" y="258" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="12">daily commits over the last year</text>
+      ${context.options.showLegend ? `<text x="32" y="258" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="12">daily commits over the last year</text>` : ""}
     `,
   });
 }
@@ -219,7 +393,7 @@ function renderPunch(days: ContributionDay[], context: RenderContext) {
   const max = Math.max(...days.map((day) => day.contributionCount), 1);
   const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
   const left = 78;
-  const top = 102;
+  const top = getContentTop(context, 102);
   const rowGap = 20;
   const colGap = 31;
   const labels = Array.from({ length: 24 }, (_, hour) =>
@@ -242,7 +416,106 @@ function renderPunch(days: ContributionDay[], context: RenderContext) {
       ${labels}
       ${rows}
       ${dots}
-      <text x="32" y="252" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="12">activity by day and hour (UTC)</text>
+      ${context.options.showLegend ? `<text x="32" y="252" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="12">activity by day and hour (UTC)</text>` : ""}
+    `,
+  });
+}
+
+function renderStats(days: ContributionDay[], context: RenderContext) {
+  const recent = days.slice(-371);
+  const activeDays = recent.filter((day) => day.contributionCount > 0).length;
+  const bestDay = recent.reduce((best, day) => (day.contributionCount > best.contributionCount ? day : best), recent[0] || { date: "", contributionCount: 0 });
+  const average = recent.length ? Math.round((recent.reduce((sum, day) => sum + day.contributionCount, 0) / recent.length) * 10) / 10 : 0;
+  const stats = [
+    { label: "Total", value: context.total },
+    { label: "Active days", value: activeDays },
+    { label: "Best day", value: bestDay.contributionCount },
+    { label: "Daily avg", value: average },
+  ];
+  const cards = stats
+    .map((stat, index) => {
+      const x = 32 + index * 211;
+      return `
+        <rect x="${x}" y="96" width="184" height="98" rx="8" fill="${context.theme.card}" stroke="${context.theme.border}"/>
+        <text x="${x + 18}" y="128" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="12">${stat.label}</text>
+        <text x="${x + 18}" y="166" fill="${context.theme.text}" font-family="JetBrains Mono, Consolas, monospace" font-size="28" font-weight="700">${stat.value}</text>
+      `;
+    })
+    .join("");
+
+  return shell({
+    ...context,
+    height: 230,
+    body: `
+      ${cards}
+      ${context.options.showLegend ? `<text x="32" y="210" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="12">best day: ${escapeXml(bestDay.date || "n/a")}</text>` : ""}
+    `,
+  });
+}
+
+function renderSummary(days: ContributionDay[], context: RenderContext) {
+  const recent = days.slice(-120);
+  const max = Math.max(...recent.map((day) => day.contributionCount), 1);
+  const cell = 9;
+  const gap = 3;
+  const left = 34;
+  const top = getContentTop(context, 92);
+  const cells = recent
+    .map((day, index) => {
+      const column = index % 40;
+      const row = Math.floor(index / 40);
+      return `<rect x="${left + column * (cell + gap)}" y="${top + row * (cell + gap)}" width="${cell}" height="${cell}" rx="2" fill="${context.theme.colors[levelForCount(day.contributionCount, max)]}"><title>${day.contributionCount} contributions on ${day.date}</title></rect>`;
+    })
+    .join("");
+  const total = recent.reduce((sum, day) => sum + day.contributionCount, 0);
+
+  return shell({
+    ...context,
+    height: 190,
+    body: `
+      ${cells}
+      ${context.options.showLegend ? `<text x="548" y="${top + 20}" fill="${context.theme.text}" font-family="JetBrains Mono, Consolas, monospace" font-size="24" font-weight="700">${total}</text><text x="548" y="${top + 45}" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="12">contributions in last 120 days</text>` : ""}
+    `,
+  });
+}
+
+function renderProfile(days: ContributionDay[], context: RenderContext) {
+  const recent = days.slice(-28);
+  const max = Math.max(...recent.map((day) => day.contributionCount), 1);
+  const activeDays = days.slice(-371).filter((day) => day.contributionCount > 0).length;
+  const sparkline = recent
+    .map((day, index) => {
+      const height = Math.max(4, (day.contributionCount / max) * 54);
+      const x = 486 + index * 13;
+      const y = 158 - height;
+      return `<rect x="${x}" y="${y.toFixed(2)}" width="8" height="${height.toFixed(2)}" rx="2" fill="${context.theme.colors[levelForCount(day.contributionCount, max)]}"/>`;
+    })
+    .join("");
+  const initial = escapeXml(context.displayName.charAt(0).toUpperCase() || context.username.charAt(0).toUpperCase());
+  const avatar = context.options.showAvatar && context.avatarDataUri
+    ? `
+      <defs>
+        <clipPath id="avatarClip">
+          <circle cx="78" cy="132" r="36"/>
+        </clipPath>
+      </defs>
+      <image href="${context.avatarDataUri}" xlink:href="${context.avatarDataUri}" x="42" y="96" width="72" height="72" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatarClip)"/>
+      <circle cx="78" cy="132" r="38" fill="none" stroke="${context.theme.border}"/>
+    `
+    : `
+      <circle cx="78" cy="132" r="38" fill="${context.theme.card}" stroke="${context.theme.border}"/>
+      <text x="78" y="143" text-anchor="middle" fill="${context.theme.text}" font-family="JetBrains Mono, Consolas, monospace" font-size="30" font-weight="700">${initial}</text>
+    `;
+
+  return shell({
+    ...context,
+    height: 220,
+    body: `
+      ${avatar}
+      <text x="136" y="118" fill="${context.theme.text}" font-family="JetBrains Mono, Consolas, monospace" font-size="24" font-weight="700">${escapeXml(context.displayName)}</text>
+      <text x="136" y="146" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="13">@${escapeXml(context.username)} - ${activeDays} active days</text>
+      ${sparkline}
+      ${context.options.showLegend ? `<text x="486" y="182" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="12">last 28 days</text>` : ""}
     `,
   });
 }
@@ -250,22 +523,42 @@ function renderPunch(days: ContributionDay[], context: RenderContext) {
 type RenderContext = {
   username: string;
   displayName: string;
+  avatarDataUri: string;
   total: number;
   theme: Theme;
   outputWidth: number;
+  options: RenderOptions;
 };
 
-function errorSvg(message: string, outputWidth = 900) {
+function noticeSvg(title: string, message: string, theme: Theme, options: RenderOptions, outputWidth = 900) {
   const height = 170;
   const outputHeight = Math.round((height * outputWidth) / 900);
+  const borderRadius = Math.max(0, options.radius - 0.5);
+  const border = options.showBorder
+    ? `<rect x="0.5" y="0.5" width="899" height="169" rx="${borderRadius}" fill="none" stroke="${theme.border}"/>`
+    : "";
   return `
     <svg width="${outputWidth}" height="${outputHeight}" viewBox="0 0 900 170" xmlns="http://www.w3.org/2000/svg" role="img">
-      <rect width="900" height="170" rx="10" fill="#0a0d12"/>
-      <rect x="0.5" y="0.5" width="899" height="169" rx="9.5" fill="none" stroke="#232b36"/>
-      <text x="32" y="76" fill="#e8edf3" font-family="JetBrains Mono, Consolas, monospace" font-size="22" font-weight="700">Contribution graph unavailable</text>
-      <text x="32" y="110" fill="#7d8a9a" font-family="JetBrains Mono, Consolas, monospace" font-size="14">${escapeXml(message)}</text>
+      <rect width="900" height="170" rx="${options.radius}" fill="${theme.bg}"/>
+      ${border}
+      <text x="32" y="76" fill="${theme.text}" font-family="JetBrains Mono, Consolas, monospace" font-size="22" font-weight="700">${escapeXml(title)}</text>
+      <text x="32" y="110" fill="${theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="14">${escapeXml(message)}</text>
     </svg>
   `.trim();
+}
+
+function errorSvg(message: string, theme: Theme, options: RenderOptions, outputWidth = 900) {
+  return noticeSvg("Contribution graph unavailable", message, theme, options, outputWidth);
+}
+
+function emptyContributionsSvg(theme: Theme, options: RenderOptions, outputWidth = 900) {
+  return noticeSvg(
+    "No public contribution data found",
+    "Private contributions may be hidden, inaccessible to this token, or commits may not count yet.",
+    theme,
+    options,
+    outputWidth,
+  );
 }
 
 function svgResponse(svg: string, maxAge = 3600) {
@@ -282,13 +575,30 @@ export async function GET(request: NextRequest) {
   const themeName = (request.nextUrl.searchParams.get("theme") || "github") as ThemeName;
   const graphType = (request.nextUrl.searchParams.get("type") || "heatmap") as GraphType;
   const sizeName = (request.nextUrl.searchParams.get("size") || "normal") as SvgSize;
-  const theme = themes[themeName] || themes.github;
+  const baseTheme = themes[themeName] || themes.github;
+  const theme: Theme = {
+    ...baseTheme,
+    bg: parseHexColor(request.nextUrl.searchParams.get("bg"), baseTheme.bg),
+    text: parseHexColor(request.nextUrl.searchParams.get("text"), baseTheme.text),
+    border: parseHexColor(request.nextUrl.searchParams.get("border"), baseTheme.border),
+  };
+  const options: RenderOptions = {
+    showTitle: !parseBoolean(request.nextUrl.searchParams.get("hide_title"), false),
+    showTotal: !parseBoolean(request.nextUrl.searchParams.get("hide_total"), false),
+    showLegend: !parseBoolean(request.nextUrl.searchParams.get("hide_legend"), false),
+    showBorder: parseBoolean(request.nextUrl.searchParams.get("show_border"), true),
+    showAvatar: parseBoolean(request.nextUrl.searchParams.get("avatar"), true),
+    radius: parseRadius(request.nextUrl.searchParams.get("radius")),
+  };
   const outputWidth = sizes[sizeName] || sizes.normal;
   const token = process.env.GITHUB_TOKEN;
 
-  if (!username) return svgResponse(errorSvg("Add ?username=your-github-username to the URL.", outputWidth), 300);
-  if (!/^(?!-)(?!.*--)[a-zA-Z0-9-]{1,39}(?<!-)$/.test(username)) return svgResponse(errorSvg("Invalid GitHub username.", outputWidth), 300);
-  if (!token) return svgResponse(errorSvg("Missing GITHUB_TOKEN environment variable.", outputWidth), 300);
+  if (!username) return svgResponse(errorSvg("Add ?username=your-github-username to the URL.", theme, options, outputWidth), 300);
+  if (!/^(?!-)(?!.*--)[a-zA-Z0-9-]{1,39}(?<!-)$/.test(username)) return svgResponse(errorSvg("Invalid GitHub username.", theme, options, outputWidth), 300);
+  if (!token) return svgResponse(errorSvg("Missing GITHUB_TOKEN environment variable.", theme, options, outputWidth), 300);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), githubTimeoutMs);
 
   try {
     const response = await fetch("https://api.github.com/graphql", {
@@ -298,30 +608,58 @@ export async function GET(request: NextRequest) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ query, variables: { username } }),
+      signal: controller.signal,
       next: { revalidate: 3600 },
     });
 
-    if (!response.ok) return svgResponse(errorSvg(`GitHub API returned ${response.status}.`, outputWidth), 300);
+    if (!response.ok) return svgResponse(errorSvg(friendlyHttpError(response), theme, options, outputWidth), 300);
 
-    const payload = (await response.json()) as GitHubContributionResponse;
+    let payload: GitHubContributionResponse;
+    try {
+      payload = (await response.json()) as GitHubContributionResponse;
+    } catch {
+      return svgResponse(errorSvg("GitHub returned an unreadable response.", theme, options, outputWidth), 300);
+    }
+
+    const graphQLError = friendlyGraphQLError(payload.errors);
+    if (graphQLError) return svgResponse(errorSvg(graphQLError, theme, options, outputWidth), 300);
+
     const user = payload.data?.user;
-    if (!user) return svgResponse(errorSvg("GitHub user not found.", outputWidth), 300);
+    if (!user) return svgResponse(errorSvg("GitHub user not found.", theme, options, outputWidth), 300);
 
     const calendar = user.contributionsCollection.contributionCalendar;
+    const total = calendar.totalContributions || user.contributionsCollection.restrictedContributionsCount;
     const days = flattenWeeks(calendar.weeks);
+    const hasVisibleDays = days.some((day) => day.contributionCount > 0);
+
+    if (!hasVisibleDays && total === 0) {
+      return svgResponse(emptyContributionsSvg(theme, options, outputWidth), 300);
+    }
+
+    const avatarUrl = graphType === "profile" && options.showAvatar ? await fetchUserAvatarUrl(user.login, token) : "";
+    const avatarDataUri = avatarUrl ? await fetchImageDataUri(avatarUrl, token) : "";
+
     const context = {
       username: user.login,
       displayName: user.name || user.login,
-      total: calendar.totalContributions,
+      avatarDataUri,
+      total,
       theme,
       outputWidth,
+      options,
     };
 
     if (graphType === "activity") return svgResponse(renderActivity(calendar.weeks, context));
     if (graphType === "streak") return svgResponse(renderStreak(context));
     if (graphType === "punch") return svgResponse(renderPunch(days, context));
+    if (graphType === "stats") return svgResponse(renderStats(days, context));
+    if (graphType === "summary") return svgResponse(renderSummary(days, context));
+    if (graphType === "profile") return svgResponse(renderProfile(days, context));
     return svgResponse(renderHeatmap(days, context));
-  } catch {
-    return svgResponse(errorSvg("Could not load contribution data.", outputWidth), 300);
+  } catch (error) {
+    const message = error instanceof Error && error.name === "AbortError" ? "GitHub API request timed out." : "Could not load contribution data.";
+    return svgResponse(errorSvg(message, theme, options, outputWidth), 300);
+  } finally {
+    clearTimeout(timeout);
   }
 }
