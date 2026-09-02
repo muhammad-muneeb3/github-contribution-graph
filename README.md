@@ -11,8 +11,9 @@ The app includes a live builder where users can enter a GitHub username, choose 
 - Dynamic SVG endpoint for GitHub README files
 - Username-based graph generation
 - Graph styles: `heatmap`, `activity`, `streak`, `punch`, `stats`, `summary`, `profile`
-- Themes: `github`, `ocean`, `sunset`, `grape`, `mono`, `rose`
+- Themes: `github`, `ocean`, `sunset`, `grape`, `mono`, `rose`, `white`
 - Live preview builder
+- API docs page at `/docs`
 - Copy-ready Markdown embed code
 - Vercel-ready Next.js app
 

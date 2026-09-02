@@ -15,6 +15,9 @@ type GitHubContributionResponse = {
       login: string;
       name: string | null;
       contributionsCollection: {
+        hasAnyContributions: boolean;
+        hasAnyRestrictedContributions: boolean;
+        restrictedContributionsCount: number;
         contributionCalendar: {
           totalContributions: number;
           weeks: ContributionWeek[];
@@ -37,6 +40,7 @@ const themes = {
   grape: { bg: "#120f1b", card: "#151020", border: "#33264a", text: "#f2ebff", muted: "#b69bdc", grid: "#2e2440", colors: ["#191624", "#3a1f5c", "#5f2f96", "#8a4fd1", "#c08bff"] },
   mono: { bg: "#101010", card: "#111111", border: "#303030", text: "#f0f0f0", muted: "#9a9a9a", grid: "#2a2a2a", colors: ["#161616", "#343434", "#5c5c5c", "#8a8a8a", "#c6c6c6"] },
   rose: { bg: "#160d12", card: "#1b0f15", border: "#452032", text: "#fff0f7", muted: "#dfa1bd", grid: "#3a1b2a", colors: ["#221219", "#5c1a3a", "#9c2c5c", "#d94a86", "#ff8ec2"] },
+  white: { bg: "#ffffff", card: "#f6f8fa", border: "#d0d7de", text: "#111111", muted: "#57606a", grid: "#d0d7de", colors: ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"] },
 } as const;
 
 type ThemeName = keyof typeof themes;
@@ -64,7 +68,7 @@ const sizes: Record<SvgSize, number> = {
   normal: 900,
   wide: 1080,
 };
-const githubTimeoutMs = 8000;
+const githubTimeoutMs = 12000;
 
 const query = `
   query Contributions($username: String!) {
@@ -72,6 +76,9 @@ const query = `
       login
       name
       contributionsCollection {
+        hasAnyContributions
+        hasAnyRestrictedContributions
+        restrictedContributionsCount
         contributionCalendar {
           totalContributions
           weeks {
@@ -141,7 +148,7 @@ function friendlyGraphQLError(errors: GitHubGraphQLError[] | undefined) {
   if (message.includes("rate limit") || type.includes("rate")) return "GitHub rate limit reached. Try again later.";
   if (message.includes("bad credentials") || message.includes("expired") || message.includes("unauthorized")) return "GitHub token is invalid or expired.";
   if (message.includes("forbidden") || message.includes("permission")) return "GitHub API access was forbidden. Check token permissions.";
-  if (message.includes("not found")) return "GitHub user not found.";
+  if (message.includes("not found") || message.includes("could not resolve to a user")) return "GitHub user not found. Check the username and try again.";
 
   return errors[0]?.message || "GitHub returned a GraphQL error.";
 }
@@ -444,7 +451,7 @@ type RenderContext = {
   options: RenderOptions;
 };
 
-function errorSvg(message: string, theme: Theme, options: RenderOptions, outputWidth = 900) {
+function noticeSvg(title: string, message: string, theme: Theme, options: RenderOptions, outputWidth = 900) {
   const height = 170;
   const outputHeight = Math.round((height * outputWidth) / 900);
   const borderRadius = Math.max(0, options.radius - 0.5);
@@ -455,10 +462,24 @@ function errorSvg(message: string, theme: Theme, options: RenderOptions, outputW
     <svg width="${outputWidth}" height="${outputHeight}" viewBox="0 0 900 170" xmlns="http://www.w3.org/2000/svg" role="img">
       <rect width="900" height="170" rx="${options.radius}" fill="${theme.bg}"/>
       ${border}
-      <text x="32" y="76" fill="${theme.text}" font-family="JetBrains Mono, Consolas, monospace" font-size="22" font-weight="700">Contribution graph unavailable</text>
+      <text x="32" y="76" fill="${theme.text}" font-family="JetBrains Mono, Consolas, monospace" font-size="22" font-weight="700">${escapeXml(title)}</text>
       <text x="32" y="110" fill="${theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="14">${escapeXml(message)}</text>
     </svg>
   `.trim();
+}
+
+function errorSvg(message: string, theme: Theme, options: RenderOptions, outputWidth = 900) {
+  return noticeSvg("Contribution graph unavailable", message, theme, options, outputWidth);
+}
+
+function emptyContributionsSvg(theme: Theme, options: RenderOptions, outputWidth = 900) {
+  return noticeSvg(
+    "No public contribution data found",
+    "Private contributions may be hidden, inaccessible to this token, or commits may not count yet.",
+    theme,
+    options,
+    outputWidth,
+  );
 }
 
 function svgResponse(svg: string, maxAge = 3600) {
@@ -527,11 +548,18 @@ export async function GET(request: NextRequest) {
     if (!user) return svgResponse(errorSvg("GitHub user not found.", theme, options, outputWidth), 300);
 
     const calendar = user.contributionsCollection.contributionCalendar;
+    const total = calendar.totalContributions || user.contributionsCollection.restrictedContributionsCount;
     const days = flattenWeeks(calendar.weeks);
+    const hasVisibleDays = days.some((day) => day.contributionCount > 0);
+
+    if (!hasVisibleDays && total === 0) {
+      return svgResponse(emptyContributionsSvg(theme, options, outputWidth), 300);
+    }
+
     const context = {
       username: user.login,
       displayName: user.name || user.login,
-      total: calendar.totalContributions,
+      total,
       theme,
       outputWidth,
       options,

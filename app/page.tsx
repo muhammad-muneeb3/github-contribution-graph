@@ -9,6 +9,7 @@ const themes = {
   grape: ["#191624", "#3a1f5c", "#5f2f96", "#8a4fd1", "#c08bff"],
   mono: ["#161616", "#343434", "#5c5c5c", "#8a8a8a", "#c6c6c6"],
   rose: ["#221219", "#5c1a3a", "#9c2c5c", "#d94a86", "#ff8ec2"],
+  white: ["#ebedf0", "#9be9a8", "#40c463", "#30a14e", "#216e39"],
 };
 
 const themeSurfaces = {
@@ -18,6 +19,7 @@ const themeSurfaces = {
   grape: { bg: "#120f1b", text: "#f2ebff", border: "#33264a" },
   mono: { bg: "#101010", text: "#f0f0f0", border: "#303030" },
   rose: { bg: "#160d12", text: "#fff0f7", border: "#452032" },
+  white: { bg: "#ffffff", text: "#111111", border: "#d0d7de" },
 };
 
 const graphTypes = [
@@ -77,7 +79,7 @@ function getUsernameError(value: string) {
 }
 
 function extractSvgError(svg: string) {
-  if (!svg.includes("Contribution graph unavailable")) return "";
+  if (!svg.includes("Contribution graph unavailable") && !svg.includes("No public contribution data found")) return "";
   const messages = Array.from(svg.matchAll(/<text[^>]*>(.*?)<\/text>/g)).map((match) =>
     match[1]
       .replace(/&amp;/g, "&")
@@ -199,7 +201,7 @@ export default function Home() {
           <div className="nav-links">
             <a href="#builder">Build</a>
             <a href="#themes">Themes</a>
-            <a href="#how">How it works</a>
+            <a href="/docs">Docs</a>
           </div>
           <a className="btn" href="#builder">
             Get your graph
