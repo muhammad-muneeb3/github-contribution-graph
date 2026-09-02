@@ -21,7 +21,7 @@ The app includes a live builder where users can enter a GitHub username, choose 
 After deployment, use your Vercel domain in any GitHub README:
 
 ```md
-<img src="https://github-sprout.vercel.app/api/contributions?username=muhammad-muneeb3&theme=github&type=heatmap&v=3" alt="GitHub contribution graph" />
+<img src="https://github-sprout.vercel.app/api/contributions?username=muhammad-muneeb3&theme=github&type=heatmap&v=4" alt="GitHub contribution graph" />
 ```
 
 Change the `username`, `theme`, or `type` query params to customize the widget.
