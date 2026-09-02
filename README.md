@@ -26,6 +26,17 @@ After deployment, use your Vercel domain in any GitHub README:
 
 Change the `username`, `theme`, `type`, or `size` query params to customize the widget.
 
+Advanced params are also supported:
+
+- `hide_title=true`
+- `hide_total=true`
+- `hide_legend=true`
+- `show_border=false`
+- `radius=12`
+- `bg=0a0d12`
+- `text=e8edf3`
+- `border=232b36`
+
 ## API Examples
 
 ```txt
