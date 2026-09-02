@@ -22,6 +22,12 @@ type GitHubContributionResponse = {
       };
     } | null;
   };
+  errors?: GitHubGraphQLError[];
+};
+
+type GitHubGraphQLError = {
+  message?: string;
+  type?: string;
 };
 
 const themes = {
@@ -58,6 +64,7 @@ const sizes: Record<SvgSize, number> = {
   normal: 900,
   wide: 1080,
 };
+const githubTimeoutMs = 8000;
 
 const query = `
   query Contributions($username: String!) {
@@ -101,6 +108,42 @@ function parseHexColor(value: string | null, fallback: string) {
   const hex = value.trim().replace(/^#/, "");
   if (!/^[a-fA-F0-9]{6}$/.test(hex)) return fallback;
   return `#${hex.toLowerCase()}`;
+}
+
+function formatRateLimitReset(value: string | null) {
+  if (!value) return "";
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp)) return "";
+  return new Date(timestamp * 1000).toISOString().replace("T", " ").replace(".000Z", " UTC");
+}
+
+function friendlyHttpError(response: Response) {
+  if (response.status === 401) return "GitHub token is invalid or expired.";
+  if (response.status === 403) {
+    const remaining = response.headers.get("x-ratelimit-remaining");
+    if (remaining === "0") {
+      const reset = formatRateLimitReset(response.headers.get("x-ratelimit-reset"));
+      return reset ? `GitHub rate limit reached. Try again after ${reset}.` : "GitHub rate limit reached. Try again later.";
+    }
+    return "GitHub API access was forbidden. Check token permissions.";
+  }
+  if (response.status === 404) return "GitHub API endpoint was not found.";
+  if (response.status === 429) return "GitHub is rate limiting requests. Try again later.";
+  if (response.status >= 500) return "GitHub API is temporarily unavailable.";
+  return `GitHub API returned ${response.status}.`;
+}
+
+function friendlyGraphQLError(errors: GitHubGraphQLError[] | undefined) {
+  if (!errors?.length) return "";
+  const message = errors.map((error) => error.message || "").join(" ").toLowerCase();
+  const type = errors.map((error) => error.type || "").join(" ").toLowerCase();
+
+  if (message.includes("rate limit") || type.includes("rate")) return "GitHub rate limit reached. Try again later.";
+  if (message.includes("bad credentials") || message.includes("expired") || message.includes("unauthorized")) return "GitHub token is invalid or expired.";
+  if (message.includes("forbidden") || message.includes("permission")) return "GitHub API access was forbidden. Check token permissions.";
+  if (message.includes("not found")) return "GitHub user not found.";
+
+  return errors[0]?.message || "GitHub returned a GraphQL error.";
 }
 
 function levelForCount(count: number, max: number) {
@@ -453,6 +496,9 @@ export async function GET(request: NextRequest) {
   if (!/^(?!-)(?!.*--)[a-zA-Z0-9-]{1,39}(?<!-)$/.test(username)) return svgResponse(errorSvg("Invalid GitHub username.", theme, options, outputWidth), 300);
   if (!token) return svgResponse(errorSvg("Missing GITHUB_TOKEN environment variable.", theme, options, outputWidth), 300);
 
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), githubTimeoutMs);
+
   try {
     const response = await fetch("https://api.github.com/graphql", {
       method: "POST",
@@ -461,12 +507,22 @@ export async function GET(request: NextRequest) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ query, variables: { username } }),
+      signal: controller.signal,
       next: { revalidate: 3600 },
     });
 
-    if (!response.ok) return svgResponse(errorSvg(`GitHub API returned ${response.status}.`, theme, options, outputWidth), 300);
+    if (!response.ok) return svgResponse(errorSvg(friendlyHttpError(response), theme, options, outputWidth), 300);
 
-    const payload = (await response.json()) as GitHubContributionResponse;
+    let payload: GitHubContributionResponse;
+    try {
+      payload = (await response.json()) as GitHubContributionResponse;
+    } catch {
+      return svgResponse(errorSvg("GitHub returned an unreadable response.", theme, options, outputWidth), 300);
+    }
+
+    const graphQLError = friendlyGraphQLError(payload.errors);
+    if (graphQLError) return svgResponse(errorSvg(graphQLError, theme, options, outputWidth), 300);
+
     const user = payload.data?.user;
     if (!user) return svgResponse(errorSvg("GitHub user not found.", theme, options, outputWidth), 300);
 
@@ -488,7 +544,10 @@ export async function GET(request: NextRequest) {
     if (graphType === "summary") return svgResponse(renderSummary(days, context));
     if (graphType === "profile") return svgResponse(renderProfile(days, context));
     return svgResponse(renderHeatmap(days, context));
-  } catch {
-    return svgResponse(errorSvg("Could not load contribution data.", theme, options, outputWidth), 300);
+  } catch (error) {
+    const message = error instanceof Error && error.name === "AbortError" ? "GitHub API request timed out." : "Could not load contribution data.";
+    return svgResponse(errorSvg(message, theme, options, outputWidth), 300);
+  } finally {
+    clearTimeout(timeout);
   }
 }
