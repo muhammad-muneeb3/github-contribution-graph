@@ -28,6 +28,10 @@ type GitHubContributionResponse = {
   errors?: GitHubGraphQLError[];
 };
 
+type GitHubUserResponse = {
+  avatar_url?: string;
+};
+
 type GitHubGraphQLError = {
   message?: string;
   type?: string;
@@ -60,6 +64,7 @@ type RenderOptions = {
   showTotal: boolean;
   showLegend: boolean;
   showBorder: boolean;
+  showAvatar: boolean;
   radius: number;
 };
 
@@ -115,6 +120,66 @@ function parseHexColor(value: string | null, fallback: string) {
   const hex = value.trim().replace(/^#/, "");
   if (!/^[a-fA-F0-9]{6}$/.test(hex)) return fallback;
   return `#${hex.toLowerCase()}`;
+}
+
+function arrayBufferToBase64(buffer: ArrayBuffer) {
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let index = 0; index < bytes.byteLength; index += 1) {
+    binary += String.fromCharCode(bytes[index]);
+  }
+  return btoa(binary);
+}
+
+async function fetchImageDataUri(url: string, token: string) {
+  if (!url) return "";
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+
+  try {
+    const response = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "image/*",
+      },
+      signal: controller.signal,
+      next: { revalidate: 86400 },
+    });
+    if (!response.ok) return "";
+
+    const contentType = response.headers.get("content-type") || "image/png";
+    if (!contentType.startsWith("image/")) return "";
+
+    return `data:${contentType};base64,${arrayBufferToBase64(await response.arrayBuffer())}`;
+  } catch {
+    return "";
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function fetchUserAvatarUrl(username: string, token: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 3000);
+
+  try {
+    const response = await fetch(`https://api.github.com/users/${encodeURIComponent(username)}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: "application/vnd.github+json",
+      },
+      signal: controller.signal,
+      next: { revalidate: 86400 },
+    });
+    if (!response.ok) return "";
+
+    const user = (await response.json()) as GitHubUserResponse;
+    return user.avatar_url || "";
+  } catch {
+    return "";
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 function formatRateLimitReset(value: string | null) {
@@ -206,7 +271,7 @@ function shell({ username, displayName, total, theme, options, body, height = 26
     : "";
 
   return `
-    <svg width="${outputWidth}" height="${outputHeight}" viewBox="0 0 ${viewBoxWidth} ${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${escapeXml(username)} contribution graph">
+    <svg width="${outputWidth}" height="${outputHeight}" viewBox="0 0 ${viewBoxWidth} ${height}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" role="img" aria-label="${escapeXml(username)} contribution graph">
       <rect width="${viewBoxWidth}" height="${height}" rx="${options.radius}" fill="${theme.bg}"/>
       ${border}
       ${title}
@@ -427,13 +492,26 @@ function renderProfile(days: ContributionDay[], context: RenderContext) {
     })
     .join("");
   const initial = escapeXml(context.displayName.charAt(0).toUpperCase() || context.username.charAt(0).toUpperCase());
+  const avatar = context.options.showAvatar && context.avatarDataUri
+    ? `
+      <defs>
+        <clipPath id="avatarClip">
+          <circle cx="78" cy="132" r="36"/>
+        </clipPath>
+      </defs>
+      <image href="${context.avatarDataUri}" xlink:href="${context.avatarDataUri}" x="42" y="96" width="72" height="72" preserveAspectRatio="xMidYMid slice" clip-path="url(#avatarClip)"/>
+      <circle cx="78" cy="132" r="38" fill="none" stroke="${context.theme.border}"/>
+    `
+    : `
+      <circle cx="78" cy="132" r="38" fill="${context.theme.card}" stroke="${context.theme.border}"/>
+      <text x="78" y="143" text-anchor="middle" fill="${context.theme.text}" font-family="JetBrains Mono, Consolas, monospace" font-size="30" font-weight="700">${initial}</text>
+    `;
 
   return shell({
     ...context,
     height: 220,
     body: `
-      <circle cx="78" cy="132" r="38" fill="${context.theme.card}" stroke="${context.theme.border}"/>
-      <text x="78" y="143" text-anchor="middle" fill="${context.theme.text}" font-family="JetBrains Mono, Consolas, monospace" font-size="30" font-weight="700">${initial}</text>
+      ${avatar}
       <text x="136" y="118" fill="${context.theme.text}" font-family="JetBrains Mono, Consolas, monospace" font-size="24" font-weight="700">${escapeXml(context.displayName)}</text>
       <text x="136" y="146" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="13">@${escapeXml(context.username)} - ${activeDays} active days</text>
       ${sparkline}
@@ -445,6 +523,7 @@ function renderProfile(days: ContributionDay[], context: RenderContext) {
 type RenderContext = {
   username: string;
   displayName: string;
+  avatarDataUri: string;
   total: number;
   theme: Theme;
   outputWidth: number;
@@ -508,6 +587,7 @@ export async function GET(request: NextRequest) {
     showTotal: !parseBoolean(request.nextUrl.searchParams.get("hide_total"), false),
     showLegend: !parseBoolean(request.nextUrl.searchParams.get("hide_legend"), false),
     showBorder: parseBoolean(request.nextUrl.searchParams.get("show_border"), true),
+    showAvatar: parseBoolean(request.nextUrl.searchParams.get("avatar"), true),
     radius: parseRadius(request.nextUrl.searchParams.get("radius")),
   };
   const outputWidth = sizes[sizeName] || sizes.normal;
@@ -556,9 +636,13 @@ export async function GET(request: NextRequest) {
       return svgResponse(emptyContributionsSvg(theme, options, outputWidth), 300);
     }
 
+    const avatarUrl = graphType === "profile" && options.showAvatar ? await fetchUserAvatarUrl(user.login, token) : "";
+    const avatarDataUri = avatarUrl ? await fetchImageDataUri(avatarUrl, token) : "";
+
     const context = {
       username: user.login,
       displayName: user.name || user.login,
+      avatarDataUri,
       total,
       theme,
       outputWidth,

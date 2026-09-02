@@ -9,6 +9,7 @@ const params = [
   { name: "hide_total", values: "true or false", note: "Hides total contribution text when true." },
   { name: "hide_legend", values: "true or false", note: "Hides legends and helper captions when true." },
   { name: "show_border", values: "true or false", note: "Turns the outer border on or off." },
+  { name: "avatar", values: "true or false", note: "Shows the GitHub profile image in the profile layout when true." },
   { name: "radius", values: "0 to 24", note: "Controls SVG corner radius." },
   { name: "bg", values: "6-digit hex", note: "Overrides background color, without #." },
   { name: "text", values: "6-digit hex", note: "Overrides primary text color, without #." },
@@ -19,7 +20,7 @@ const examples = [
   "/api/contributions?username=muhammad-muneeb3&theme=github&type=heatmap",
   "/api/contributions?username=muhammad-muneeb3&theme=ocean&type=activity&size=wide",
   "/api/contributions?username=muhammad-muneeb3&theme=grape&type=stats&hide_legend=true",
-  "/api/contributions?username=muhammad-muneeb3&theme=mono&type=profile&bg=ffffff&text=111111&border=d0d7de",
+  "/api/contributions?username=muhammad-muneeb3&theme=mono&type=profile&avatar=false&bg=ffffff&text=111111&border=d0d7de",
 ];
 
 const troubleshooting = [

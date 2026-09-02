@@ -95,7 +95,7 @@ function stripHash(value: string) {
 }
 
 export default function Home() {
-  const [username, setUsername] = useState("muhammad-muneeb3");
+  const [username, setUsername] = useState("");
   const [theme, setTheme] = useState<ThemeName>("github");
   const [graphType, setGraphType] = useState<GraphType>("heatmap");
   const [size, setSize] = useState<SizeName>("normal");
@@ -103,11 +103,13 @@ export default function Home() {
   const [showTotal, setShowTotal] = useState(true);
   const [showLegend, setShowLegend] = useState(true);
   const [showBorder, setShowBorder] = useState(true);
+  const [showAvatar, setShowAvatar] = useState(true);
   const [radius, setRadius] = useState(10);
   const [customColors, setCustomColors] = useState(themeSurfaces.github);
   const [copied, setCopied] = useState(false);
   const [previewState, setPreviewState] = useState<PreviewState>({ status: "idle", message: "" });
   const usernameError = getUsernameError(username);
+  const isUsernameEmpty = !username.trim();
   const canGenerate = !usernameError;
   const cleanUsername = username.trim();
   const selectedSize = sizeOptions.find((option) => option.key === size) || sizeOptions[1];
@@ -121,23 +123,24 @@ export default function Home() {
       bg: stripHash(customColors.bg),
       text: stripHash(customColors.text),
       border: stripHash(customColors.border),
-      v: "8",
+      v: "11",
     });
 
     if (!showTitle) params.set("hide_title", "true");
     if (!showTotal) params.set("hide_total", "true");
     if (!showLegend) params.set("hide_legend", "true");
     if (!showBorder) params.set("show_border", "false");
+    if (!showAvatar) params.set("avatar", "false");
 
     return `/api/contributions?${params.toString()}`;
   })() : "";
   const embedCode = canGenerate
     ? `<img src="https://github-sprout.vercel.app${svgUrl}" alt="${cleanUsername}'s contribution graph" />`
-    : "Fix the username to generate embed code.";
+    : "Enter a GitHub username to generate embed code.";
   const previewStyle = { "--preview-width": `${selectedSize.width}px` } as CSSProperties;
   const displayedPreviewState = svgUrl
     ? previewState
-    : { status: "idle" as const, message: "Fix the username to preview the SVG." };
+    : { status: "idle" as const, message: "Enter a GitHub username to preview." };
 
   useEffect(() => {
     if (!svgUrl) {
@@ -222,22 +225,36 @@ export default function Home() {
           </p>
         </div>
 
+        <div className="embed-strip">
+          <label>Embed in README.md</label>
+          <div className="code-block">
+            <div className="code-label">
+              <span>markdown</span>
+              <button className="copy-btn" type="button" onClick={copyCode} disabled={!canGenerate}>
+                {copied ? "copied" : "copy"}
+              </button>
+            </div>
+            <pre className="code">{embedCode}</pre>
+          </div>
+        </div>
+
         <div className="builder" id="builder">
           <div className="panel">
             <div className="field">
               <label htmlFor="username">GitHub username</label>
               <input
                 id="username"
-                className={usernameError ? "invalid" : ""}
+                className={usernameError && !isUsernameEmpty ? "invalid" : ""}
                 type="text"
                 value={username}
+                placeholder="muhammad-muneeb3"
                 spellCheck={false}
                 aria-invalid={Boolean(usernameError)}
                 aria-describedby="username-error"
                 onChange={(event) => setUsername(event.target.value)}
               />
-              {usernameError && (
-                <div className="field-error" id="username-error">
+              {(usernameError || isUsernameEmpty) && (
+                <div className={isUsernameEmpty ? "field-hint" : "field-error"} id="username-error">
                   {usernameError}
                 </div>
               )}
@@ -299,6 +316,11 @@ export default function Home() {
                   <span className="toggle-box" aria-hidden="true" />
                   <span>Border</span>
                 </label>
+                <label className="toggle-row">
+                  <input type="checkbox" checked={showAvatar} onChange={(event) => setShowAvatar(event.target.checked)} />
+                  <span className="toggle-box" aria-hidden="true" />
+                  <span>Avatar</span>
+                </label>
               </div>
             </div>
 
@@ -343,18 +365,6 @@ export default function Home() {
               </div>
             </div>
 
-            <div className="field field-last">
-              <label>Embed in README.md</label>
-              <div className="code-block">
-                <div className="code-label">
-                  <span>markdown</span>
-                  <button className="copy-btn" type="button" onClick={copyCode} disabled={!canGenerate}>
-                    {copied ? "copied" : "copy"}
-                  </button>
-                </div>
-                <pre className="code">{embedCode}</pre>
-              </div>
-            </div>
           </div>
 
           <div className="panel preview-panel">

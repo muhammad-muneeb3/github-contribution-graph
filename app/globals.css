@@ -205,11 +205,23 @@ nav {
   font-size: 15px;
 }
 
+.embed-strip {
+  max-width: 900px;
+  margin-top: 30px;
+}
+
+.embed-strip label {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--text-dim);
+  font-size: 12.5px;
+}
+
 .builder {
   display: grid;
   grid-template-columns: minmax(280px, 340px) minmax(0, 1fr);
   gap: 1px;
-  margin-top: 56px;
+  margin-top: 24px;
   overflow: hidden;
   border: 1px solid var(--border-soft);
   border-radius: var(--radius);
@@ -224,10 +236,6 @@ nav {
 
 .field {
   margin-bottom: 24px;
-}
-
-.field-last {
-  margin-bottom: 0;
 }
 
 .field label {
@@ -278,6 +286,13 @@ nav {
 .field-error {
   margin-top: 8px;
   color: #ffab5e;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.field-hint {
+  margin-top: 8px;
+  color: var(--text-faint);
   font-size: 12px;
   line-height: 1.45;
 }
