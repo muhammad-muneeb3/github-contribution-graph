@@ -25,6 +25,9 @@ const graphTypes = [
   { key: "activity", label: "Activity" },
   { key: "streak", label: "Streak" },
   { key: "punch", label: "Punch card" },
+  { key: "stats", label: "Stats" },
+  { key: "summary", label: "Summary" },
+  { key: "profile", label: "Profile" },
 ];
 
 const sizeOptions = [
@@ -116,7 +119,7 @@ export default function Home() {
       bg: stripHash(customColors.bg),
       text: stripHash(customColors.text),
       border: stripHash(customColors.border),
-      v: "6",
+      v: "8",
     });
 
     if (!showTitle) params.set("hide_title", "true");

@@ -34,7 +34,7 @@ const themes = {
 } as const;
 
 type ThemeName = keyof typeof themes;
-type GraphType = "heatmap" | "activity" | "streak" | "punch";
+type GraphType = "heatmap" | "activity" | "streak" | "punch" | "stats" | "summary" | "profile";
 type SvgSize = "compact" | "normal" | "wide";
 type Theme = {
   bg: string;
@@ -306,6 +306,92 @@ function renderPunch(days: ContributionDay[], context: RenderContext) {
   });
 }
 
+function renderStats(days: ContributionDay[], context: RenderContext) {
+  const recent = days.slice(-371);
+  const activeDays = recent.filter((day) => day.contributionCount > 0).length;
+  const bestDay = recent.reduce((best, day) => (day.contributionCount > best.contributionCount ? day : best), recent[0] || { date: "", contributionCount: 0 });
+  const average = recent.length ? Math.round((recent.reduce((sum, day) => sum + day.contributionCount, 0) / recent.length) * 10) / 10 : 0;
+  const stats = [
+    { label: "Total", value: context.total },
+    { label: "Active days", value: activeDays },
+    { label: "Best day", value: bestDay.contributionCount },
+    { label: "Daily avg", value: average },
+  ];
+  const cards = stats
+    .map((stat, index) => {
+      const x = 32 + index * 211;
+      return `
+        <rect x="${x}" y="96" width="184" height="98" rx="8" fill="${context.theme.card}" stroke="${context.theme.border}"/>
+        <text x="${x + 18}" y="128" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="12">${stat.label}</text>
+        <text x="${x + 18}" y="166" fill="${context.theme.text}" font-family="JetBrains Mono, Consolas, monospace" font-size="28" font-weight="700">${stat.value}</text>
+      `;
+    })
+    .join("");
+
+  return shell({
+    ...context,
+    height: 230,
+    body: `
+      ${cards}
+      ${context.options.showLegend ? `<text x="32" y="210" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="12">best day: ${escapeXml(bestDay.date || "n/a")}</text>` : ""}
+    `,
+  });
+}
+
+function renderSummary(days: ContributionDay[], context: RenderContext) {
+  const recent = days.slice(-120);
+  const max = Math.max(...recent.map((day) => day.contributionCount), 1);
+  const cell = 9;
+  const gap = 3;
+  const left = 34;
+  const top = getContentTop(context, 92);
+  const cells = recent
+    .map((day, index) => {
+      const column = index % 40;
+      const row = Math.floor(index / 40);
+      return `<rect x="${left + column * (cell + gap)}" y="${top + row * (cell + gap)}" width="${cell}" height="${cell}" rx="2" fill="${context.theme.colors[levelForCount(day.contributionCount, max)]}"><title>${day.contributionCount} contributions on ${day.date}</title></rect>`;
+    })
+    .join("");
+  const total = recent.reduce((sum, day) => sum + day.contributionCount, 0);
+
+  return shell({
+    ...context,
+    height: 190,
+    body: `
+      ${cells}
+      ${context.options.showLegend ? `<text x="548" y="${top + 20}" fill="${context.theme.text}" font-family="JetBrains Mono, Consolas, monospace" font-size="24" font-weight="700">${total}</text><text x="548" y="${top + 45}" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="12">contributions in last 120 days</text>` : ""}
+    `,
+  });
+}
+
+function renderProfile(days: ContributionDay[], context: RenderContext) {
+  const recent = days.slice(-28);
+  const max = Math.max(...recent.map((day) => day.contributionCount), 1);
+  const activeDays = days.slice(-371).filter((day) => day.contributionCount > 0).length;
+  const sparkline = recent
+    .map((day, index) => {
+      const height = Math.max(4, (day.contributionCount / max) * 54);
+      const x = 486 + index * 13;
+      const y = 158 - height;
+      return `<rect x="${x}" y="${y.toFixed(2)}" width="8" height="${height.toFixed(2)}" rx="2" fill="${context.theme.colors[levelForCount(day.contributionCount, max)]}"/>`;
+    })
+    .join("");
+  const initial = escapeXml(context.displayName.charAt(0).toUpperCase() || context.username.charAt(0).toUpperCase());
+
+  return shell({
+    ...context,
+    height: 220,
+    body: `
+      <circle cx="78" cy="132" r="38" fill="${context.theme.card}" stroke="${context.theme.border}"/>
+      <text x="78" y="143" text-anchor="middle" fill="${context.theme.text}" font-family="JetBrains Mono, Consolas, monospace" font-size="30" font-weight="700">${initial}</text>
+      <text x="136" y="118" fill="${context.theme.text}" font-family="JetBrains Mono, Consolas, monospace" font-size="24" font-weight="700">${escapeXml(context.displayName)}</text>
+      <text x="136" y="146" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="13">@${escapeXml(context.username)} - ${activeDays} active days</text>
+      ${sparkline}
+      ${context.options.showLegend ? `<text x="486" y="182" fill="${context.theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="12">last 28 days</text>` : ""}
+    `,
+  });
+}
+
 type RenderContext = {
   username: string;
   displayName: string;
@@ -398,6 +484,9 @@ export async function GET(request: NextRequest) {
     if (graphType === "activity") return svgResponse(renderActivity(calendar.weeks, context));
     if (graphType === "streak") return svgResponse(renderStreak(context));
     if (graphType === "punch") return svgResponse(renderPunch(days, context));
+    if (graphType === "stats") return svgResponse(renderStats(days, context));
+    if (graphType === "summary") return svgResponse(renderSummary(days, context));
+    if (graphType === "profile") return svgResponse(renderProfile(days, context));
     return svgResponse(renderHeatmap(days, context));
   } catch {
     return svgResponse(errorSvg("Could not load contribution data.", theme, options, outputWidth), 300);
