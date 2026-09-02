@@ -35,7 +35,14 @@ const themes = {
 
 type ThemeName = keyof typeof themes;
 type GraphType = "heatmap" | "activity" | "streak" | "punch";
+type SvgSize = "compact" | "normal" | "wide";
 type Theme = (typeof themes)[ThemeName];
+
+const sizes: Record<SvgSize, number> = {
+  compact: 680,
+  normal: 900,
+  wide: 1080,
+};
 
 const query = `
   query Contributions($username: String!) {
@@ -83,19 +90,21 @@ function flattenWeeks(weeks: ContributionWeek[]) {
   return weeks.flatMap((week) => week.contributionDays).sort((a, b) => a.date.localeCompare(b.date));
 }
 
-function shell({ username, displayName, total, theme, body, height = 260 }: {
+function shell({ username, displayName, total, theme, body, height = 260, outputWidth = 900 }: {
   username: string;
   displayName: string;
   total: number;
   theme: Theme;
   body: string;
   height?: number;
+  outputWidth?: number;
 }) {
-  const width = 900;
+  const viewBoxWidth = 900;
+  const outputHeight = Math.round((height * outputWidth) / viewBoxWidth);
   return `
-    <svg width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${escapeXml(username)} contribution graph">
-      <rect width="${width}" height="${height}" rx="10" fill="${theme.bg}"/>
-      <rect x="0.5" y="0.5" width="${width - 1}" height="${height - 1}" rx="9.5" fill="none" stroke="${theme.border}"/>
+    <svg width="${outputWidth}" height="${outputHeight}" viewBox="0 0 ${viewBoxWidth} ${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${escapeXml(username)} contribution graph">
+      <rect width="${viewBoxWidth}" height="${height}" rx="10" fill="${theme.bg}"/>
+      <rect x="0.5" y="0.5" width="${viewBoxWidth - 1}" height="${height - 1}" rx="9.5" fill="none" stroke="${theme.border}"/>
       <text x="32" y="36" fill="${theme.text}" font-family="JetBrains Mono, Consolas, monospace" font-size="18" font-weight="700">${escapeXml(displayName)}'s contribution graph</text>
       <text x="32" y="62" fill="${theme.muted}" font-family="JetBrains Mono, Consolas, monospace" font-size="13">@${escapeXml(username)} - ${total} contributions in the last year</text>
       ${body}
@@ -243,11 +252,14 @@ type RenderContext = {
   displayName: string;
   total: number;
   theme: Theme;
+  outputWidth: number;
 };
 
-function errorSvg(message: string) {
+function errorSvg(message: string, outputWidth = 900) {
+  const height = 170;
+  const outputHeight = Math.round((height * outputWidth) / 900);
   return `
-    <svg width="900" height="170" viewBox="0 0 900 170" xmlns="http://www.w3.org/2000/svg" role="img">
+    <svg width="${outputWidth}" height="${outputHeight}" viewBox="0 0 900 170" xmlns="http://www.w3.org/2000/svg" role="img">
       <rect width="900" height="170" rx="10" fill="#0a0d12"/>
       <rect x="0.5" y="0.5" width="899" height="169" rx="9.5" fill="none" stroke="#232b36"/>
       <text x="32" y="76" fill="#e8edf3" font-family="JetBrains Mono, Consolas, monospace" font-size="22" font-weight="700">Contribution graph unavailable</text>
@@ -269,12 +281,14 @@ export async function GET(request: NextRequest) {
   const username = request.nextUrl.searchParams.get("username")?.trim();
   const themeName = (request.nextUrl.searchParams.get("theme") || "github") as ThemeName;
   const graphType = (request.nextUrl.searchParams.get("type") || "heatmap") as GraphType;
+  const sizeName = (request.nextUrl.searchParams.get("size") || "normal") as SvgSize;
   const theme = themes[themeName] || themes.github;
+  const outputWidth = sizes[sizeName] || sizes.normal;
   const token = process.env.GITHUB_TOKEN;
 
-  if (!username) return svgResponse(errorSvg("Add ?username=your-github-username to the URL."), 300);
-  if (!/^[a-zA-Z0-9-]{1,39}$/.test(username)) return svgResponse(errorSvg("Invalid GitHub username."), 300);
-  if (!token) return svgResponse(errorSvg("Missing GITHUB_TOKEN environment variable."), 300);
+  if (!username) return svgResponse(errorSvg("Add ?username=your-github-username to the URL.", outputWidth), 300);
+  if (!/^(?!-)(?!.*--)[a-zA-Z0-9-]{1,39}(?<!-)$/.test(username)) return svgResponse(errorSvg("Invalid GitHub username.", outputWidth), 300);
+  if (!token) return svgResponse(errorSvg("Missing GITHUB_TOKEN environment variable.", outputWidth), 300);
 
   try {
     const response = await fetch("https://api.github.com/graphql", {
@@ -287,11 +301,11 @@ export async function GET(request: NextRequest) {
       next: { revalidate: 3600 },
     });
 
-    if (!response.ok) return svgResponse(errorSvg(`GitHub API returned ${response.status}.`), 300);
+    if (!response.ok) return svgResponse(errorSvg(`GitHub API returned ${response.status}.`, outputWidth), 300);
 
     const payload = (await response.json()) as GitHubContributionResponse;
     const user = payload.data?.user;
-    if (!user) return svgResponse(errorSvg("GitHub user not found."), 300);
+    if (!user) return svgResponse(errorSvg("GitHub user not found.", outputWidth), 300);
 
     const calendar = user.contributionsCollection.contributionCalendar;
     const days = flattenWeeks(calendar.weeks);
@@ -300,6 +314,7 @@ export async function GET(request: NextRequest) {
       displayName: user.name || user.login,
       total: calendar.totalContributions,
       theme,
+      outputWidth,
     };
 
     if (graphType === "activity") return svgResponse(renderActivity(calendar.weeks, context));
@@ -307,6 +322,6 @@ export async function GET(request: NextRequest) {
     if (graphType === "punch") return svgResponse(renderPunch(days, context));
     return svgResponse(renderHeatmap(days, context));
   } catch {
-    return svgResponse(errorSvg("Could not load contribution data."), 300);
+    return svgResponse(errorSvg("Could not load contribution data.", outputWidth), 300);
   }
 }
